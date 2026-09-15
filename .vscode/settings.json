@@ -2,7 +2,7 @@
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.expand": false,
   "explorer.fileNesting.patterns": {
-    "package.json": "package-lock.json, .npmrc, .nvmrc, .prettierrc, .prettierignore, .oxlintrc.json, .editorconfig, .gitattributes, nest-cli.json, vitest.config.ts",
+    "package.json": "package-lock.json, .npmrc, .nvmrc, .prettierrc, .prettierignore, .oxlintrc.json, .editorconfig, .gitattributes, nest-cli.json, vitest.config.ts, prisma.config.ts",
     "tsconfig.json": "tsconfig.*.json",
     ".env": ".env.*",
     "README.md": "LICENSE"
@@ -14,7 +14,8 @@
     ".husky/_": true
   },
   "search.exclude": {
-    "package-lock.json": true
+    "package-lock.json": true,
+    "src/generated": true
   },
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,

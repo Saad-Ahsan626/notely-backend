@@ -5,15 +5,15 @@
 
 ## Conventions
 
-| Topic          | Convention                                                                    |
-| -------------- | ----------------------------------------------------------------------------- |
-| Base URL       | `/api/v1`                                                                     |
-| Format         | JSON only (`Content-Type: application/json`)                                  |
-| Field naming   | `camelCase`                                                                   |
-| IDs            | UUID v4 strings                                                               |
-| Timestamps     | ISO 8601 in UTC, e.g. `2026-09-15T10:30:00.000Z`                              |
-| Authentication | `Authorization: Bearer <accessToken>` on every endpoint not marked **Public** |
-| Unknown fields | Rejected with `400 Bad Request`                                               |
+| Topic          | Convention                                                                            |
+| -------------- | ------------------------------------------------------------------------------------- |
+| Base URL       | `/api/v1`                                                                             |
+| Format         | JSON only (`Content-Type: application/json`)                                          |
+| Field naming   | `camelCase`                                                                           |
+| IDs            | UUID strings (generated as time-ordered UUIDv7; clients must not rely on the version) |
+| Timestamps     | ISO 8601 in UTC, e.g. `2026-09-15T10:30:00.000Z`                                      |
+| Authentication | `Authorization: Bearer <accessToken>` on every endpoint not marked **Public**         |
+| Unknown fields | Rejected with `400 Bad Request`                                                       |
 
 ## Response shapes
 
@@ -52,6 +52,26 @@ Every error, from any endpoint, uses the same shape:
 ```
 
 `details` is present only for validation errors.
+
+---
+
+## Health
+
+Health endpoints are for infrastructure (load balancers, uptime monitors) and are not wrapped in
+`{ data }`.
+
+### `GET /health` (Public)
+
+Liveness: the process is running. Never touches the database.
+
+- `200 OK`: `{ "status": "ok", "uptime": 42, "timestamp": "2026-09-15T10:30:00.000Z" }`
+
+### `GET /health/ready` (Public)
+
+Readiness: the API can serve requests because the database responds.
+
+- `200 OK`: `{ "status": "ok", "database": "up" }`
+- `503 Service Unavailable`: `{ "status": "error", "database": "down" }`
 
 ---
 

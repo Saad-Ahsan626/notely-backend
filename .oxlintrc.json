@@ -21,5 +21,13 @@
     "prefer-const": "error",
     "import/no-cycle": "error"
   },
-  "ignorePatterns": ["dist/**", "coverage/**"]
+  "ignorePatterns": ["dist/**", "coverage/**", "src/generated/**"],
+  "overrides": [
+    {
+      "files": ["prisma/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
 }

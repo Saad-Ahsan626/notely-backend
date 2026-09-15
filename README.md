@@ -17,7 +17,9 @@ architecture and professional engineering practices.
 - [x] Validated, typed environment configuration (fails fast on misconfiguration)
 - [x] Versioned API (`/api/v1`) with a health endpoint
 - [x] Strict TypeScript, type-aware linting, formatting, git hooks and CI
-- [ ] MySQL schema and migrations with Prisma
+- [x] MySQL schema, versioned migrations and idempotent seed data with Prisma 7
+- [x] Liveness and readiness health checks (readiness verifies the database)
+- [x] CI against a real MySQL 8.4 database, including a schema drift check
 - [ ] Global validation, consistent error responses and structured logging
 - [ ] Registration and login with argon2id password hashing
 - [ ] JWT access tokens with refresh token rotation and reuse detection
@@ -35,7 +37,7 @@ architecture and professional engineering practices.
 | Framework    | NestJS 12 (Express)                               |
 | Language     | TypeScript (strict)                               |
 | Database     | MySQL 8                                           |
-| ORM          | Prisma                                            |
+| ORM          | Prisma 7 (MariaDB driver adapter), UUIDv7 keys    |
 | Config       | `@nestjs/config` + Zod                            |
 | Testing      | Vitest, Supertest                                 |
 | Code quality | oxlint (type-aware), Prettier, Husky, lint-staged |
@@ -68,57 +70,78 @@ Create your environment file:
 cp .env.example .env
 ```
 
+Create the tables:
+
+```bash
+npm run db:deploy
+```
+
+Optionally load demo data (login: `demo@notely.dev` / `DemoPassword123!`, local only):
+
+```bash
+npm run db:seed
+```
+
 Start the API in watch mode:
 
 ```bash
 npm run start:dev
 ```
 
-Check that it's running:
+Check that it's running and connected to the database:
 
 ```bash
-curl http://localhost:3000/api/v1/health
+curl http://localhost:3000/api/v1/health/ready
 ```
 
 Full database instructions and troubleshooting: [docs/local-database-setup.md](docs/local-database-setup.md).
 
 ## Environment variables
 
-| Variable       | Required | Default       | Description                                |
-| -------------- | -------- | ------------- | ------------------------------------------ |
-| `NODE_ENV`     | No       | `development` | `development`, `test` or `production`      |
-| `PORT`         | No       | `3000`        | HTTP port                                  |
-| `DATABASE_URL` | Yes      | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE` |
+| Variable              | Required         | Default       | Description                                               |
+| --------------------- | ---------------- | ------------- | --------------------------------------------------------- |
+| `NODE_ENV`            | No               | `development` | `development`, `test` or `production`                     |
+| `PORT`                | No               | `3000`        | HTTP port                                                 |
+| `DATABASE_URL`        | Yes              | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE`                |
+| `DATABASE_POOL_SIZE`  | No               | `10`          | Maximum open database connections (1–100)                 |
+| `SHADOW_DATABASE_URL` | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations |
 
 Variables are validated at startup. The app refuses to start and lists every problem if any value
 is missing or invalid.
 
 ## Scripts
 
-| Script               | Description                                     |
-| -------------------- | ----------------------------------------------- |
-| `npm run start:dev`  | Start in watch mode                             |
-| `npm run build`      | Compile to `dist/`                              |
-| `npm run start:prod` | Run the compiled app                            |
-| `npm run check`      | Format check, lint, type check and unit tests   |
-| `npm run lint`       | Type-aware lint (warnings fail)                 |
-| `npm run typecheck`  | Type check `src` and `test` without emitting    |
-| `npm run format`     | Format all files with Prettier                  |
-| `npm test`           | Unit tests                                      |
-| `npm run test:e2e`   | End-to-end tests                                |
-| `npm run test:cov`   | Unit tests with coverage                        |
-| `npm run db:init`    | Create local databases and the application user |
+| Script               | Description                                        |
+| -------------------- | -------------------------------------------------- |
+| `npm run start:dev`  | Start in watch mode                                |
+| `npm run build`      | Compile to `dist/`                                 |
+| `npm run start:prod` | Run the compiled app                               |
+| `npm run check`      | Format check, lint, type check and unit tests      |
+| `npm run lint`       | Type-aware lint (warnings fail)                    |
+| `npm run typecheck`  | Type check `src` and `test` without emitting       |
+| `npm run format`     | Format all files with Prettier                     |
+| `npm test`           | Unit tests                                         |
+| `npm run test:e2e`   | End-to-end tests                                   |
+| `npm run test:cov`   | Unit tests with coverage                           |
+| `npm run db:init`    | Create local databases and the application user    |
+| `npm run db:migrate` | Create and apply a migration after a schema change |
+| `npm run db:deploy`  | Apply existing migrations                          |
+| `npm run db:status`  | Show applied and pending migrations                |
+| `npm run db:seed`    | Load demo data (refuses to run in production)      |
+| `npm run db:studio`  | Browse data in Prisma Studio                       |
+| `npm run db:reset`   | ⚠️ Drop local data and re-run all migrations       |
 
 ## API
 
 Base URL: `http://localhost:3000/api/v1`
 
-| Method | Endpoint    | Description    | Status  |
-| ------ | ----------- | -------------- | ------- |
-| GET    | `/health`   | Liveness check | ✅ Live |
-| POST   | `/auth/*`   | Authentication | Planned |
-| GET    | `/users/me` | Current user   | Planned |
-| \*     | `/notes`    | Notes CRUD     | Planned |
+| Method | Endpoint        | Description                | Status  |
+| ------ | --------------- | -------------------------- | ------- |
+| GET    | `/health`       | Liveness check             | ✅ Live |
+| GET    | `/health/ready` | Readiness check (database) | ✅ Live |
+| POST   | `/auth/*`       | Authentication             | Planned |
+| GET    | `/users/me`     | Current user               | Planned |
+| \*     | `/notes`        | Notes CRUD                 | Planned |
 
 The complete contract, including request rules, responses and error format, is in
 [docs/api-contract.md](docs/api-contract.md).
@@ -131,7 +154,9 @@ src/
 ├── app.setup.ts       # Shared app configuration (prefix, versioning, shutdown hooks)
 ├── app.module.ts      # Root module
 ├── config/            # Environment schema and validation
+├── database/          # Prisma service and database module
 └── modules/           # Feature modules: health, auth, users, notes
+prisma/                # Schema, migrations and seed
 test/                  # End-to-end tests
 docs/                  # Architecture, API contract, ERD, ADRs
 scripts/db/            # Local database setup

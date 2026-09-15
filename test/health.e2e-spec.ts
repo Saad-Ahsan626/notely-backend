@@ -36,6 +36,14 @@ describe('Health (e2e)', () => {
     expect(Number.isNaN(Date.parse(response.body.timestamp))).toBe(false);
   });
 
+  it('GET /api/v1/health/ready confirms the database is reachable', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/health/ready')
+      .expect(200);
+
+    expect(response.body).toEqual({ status: 'ok', database: 'up' });
+  });
+
   it('GET /health without prefix and version returns 404', async () => {
     await request(app.getHttpServer()).get('/health').expect(404);
   });

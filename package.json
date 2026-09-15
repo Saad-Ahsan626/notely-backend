@@ -44,6 +44,14 @@
     "test:debug": "vitest --project unit --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --project e2e",
     "db:init": "mysql -u root -p < scripts/db/init.sql",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev && prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:reset": "prisma migrate reset && prisma generate",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -58,6 +66,10 @@
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
+    "@prisma/adapter-mariadb": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "argon2": "^0.45.1",
+    "mariadb": "3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^4.6.5"
@@ -75,9 +87,15 @@
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.4.2",
+    "prisma": "7.10.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"
+  },
+  "overrides": {
+    "mariadb": "$mariadb",
+    "mysql2": "3.24.4"
   }
 }

@@ -13,6 +13,7 @@ export const envSchema = z.object({
     protocol: /^mysql$/,
     error: 'DATABASE_URL must be a valid mysql:// connection URL',
   }),
+  DATABASE_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 export type Env = z.infer<typeof envSchema>;

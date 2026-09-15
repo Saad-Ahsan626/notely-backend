@@ -11,3 +11,5 @@ Records are immutable once accepted. A changed decision gets a **new** ADR that 
 | [0004](0004-local-mysql-for-development.md)   | Use a locally installed MySQL for development | Accepted |
 | [0005](0005-repository-pattern.md)            | Wrap Prisma in concrete repository classes    | Accepted |
 | [0006](0006-uri-api-versioning.md)            | Version the API in the URI                    | Accepted |
+| [0007](0007-prisma-7-with-mariadb-adapter.md) | Use Prisma 7 with the MariaDB driver adapter  | Accepted |
+| [0008](0008-uuidv7-primary-keys.md)           | Use UUIDv7 primary keys                       | Accepted |

@@ -1,6 +1,7 @@
 # Entity Relationship Diagram
 
-> **Status:** Draft. This will be implemented with Prisma in Phase 3.
+> **Status:** Implemented. Source of truth: [prisma/schema.prisma](../prisma/schema.prisma), first migration:
+> [20260915115139_init](../prisma/migrations/20260915115139_init/migration.sql).
 
 ```mermaid
 erDiagram
@@ -8,7 +9,7 @@ erDiagram
     users ||--o{ notes : "owns"
 
     users {
-        char id PK "UUID"
+        char id PK "UUIDv7"
         varchar email UK "lowercase, max 255"
         varchar name "max 100"
         varchar password_hash "argon2id hash"
@@ -17,7 +18,7 @@ erDiagram
     }
 
     sessions {
-        char id PK "UUID"
+        char id PK "UUIDv7"
         char user_id FK "on delete cascade"
         char refresh_token_hash "SHA-256 hex"
         varchar user_agent "nullable"
@@ -28,7 +29,7 @@ erDiagram
     }
 
     notes {
-        char id PK "UUID"
+        char id PK "UUIDv7"
         char user_id FK "on delete cascade"
         varchar title "max 255"
         mediumtext content
@@ -57,12 +58,13 @@ erDiagram
 
 ## Column type decisions
 
-| Column               | Type                 | Reason                                                                                          |
-| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
-| All `id` columns     | `CHAR(36)` UUID      | Non-guessable IDs prevent enumeration (`/notes/5` → `/notes/6`)                                 |
-| `password_hash`      | `VARCHAR(255)`       | argon2id hashes are around 100 chars; leaves room for algorithm changes                         |
-| `refresh_token_hash` | `CHAR(64)`           | A SHA-256 hex digest is always exactly 64 chars                                                 |
-| `ip_address`         | `VARCHAR(45)`        | Longest textual IPv6 form (IPv4-mapped) is 45 chars                                             |
-| `content`            | `MEDIUMTEXT`         | `TEXT` holds 65,535 **bytes**; with `utf8mb4` (up to 4 bytes per char) 50,000 chars may not fit |
-| Timestamps           | `DATETIME(3)` in UTC | Millisecond precision; UTC avoids timezone bugs. Clients convert to local time                  |
-| Table/column names   | `snake_case`         | MySQL convention; Prisma models stay `PascalCase` / `camelCase` via `@@map` / `@map`            |
+| Column               | Type                 | Reason                                                                                                                                                                                             |
+| -------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All `id` columns     | `CHAR(36)` UUIDv7    | Non-guessable IDs prevent enumeration; time-ordered for index performance ([ADR 0008](adr/0008-uuidv7-primary-keys.md))                                                                            |
+| `password_hash`      | `VARCHAR(255)`       | argon2id hashes are around 100 chars; leaves room for algorithm changes                                                                                                                            |
+| `refresh_token_hash` | `CHAR(64)`           | A SHA-256 hex digest is always exactly 64 chars                                                                                                                                                    |
+| `ip_address`         | `VARCHAR(45)`        | Longest textual IPv6 form (IPv4-mapped) is 45 chars                                                                                                                                                |
+| `content`            | `MEDIUMTEXT`         | `TEXT` holds 65,535 **bytes**; with `utf8mb4` (up to 4 bytes per char) 50,000 chars may not fit. No DB default (MySQL 8.0 disallows literal defaults on text columns); the API defaults it to `""` |
+| Timestamps           | `DATETIME(3)` in UTC | Millisecond precision; UTC avoids timezone bugs. Clients convert to local time                                                                                                                     |
+| Table/column names   | `snake_case`         | MySQL convention; Prisma models stay `PascalCase` / `camelCase` via `@@map` / `@map`                                                                                                               |
+| Table collation      | utf8mb4_unicode_ci   | Set by Prisma. Case-insensitive, so the unique email index treats Alex@Mail.com and lex@mail.com as duplicates; full emoji support                                                                 |

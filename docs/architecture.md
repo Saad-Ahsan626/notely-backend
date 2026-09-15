@@ -28,6 +28,8 @@ same business logic could serve REST, GraphQL or a background job. See
 ```mermaid
 flowchart TD
     App[AppModule] --> Config["ConfigModule (global)"]
+    App --> Database["DatabaseModule (global)"]
+    Health -->|uses PrismaService| Database
     App --> Health[HealthModule]
     App --> Auth[AuthModule]
     App --> Users[UsersModule]
@@ -35,19 +37,20 @@ flowchart TD
     Auth -->|imports| Users
 ```
 
-| Module         | Status  | Purpose                                                          |
-| -------------- | ------- | ---------------------------------------------------------------- |
-| `ConfigModule` | Done    | Validated, typed environment configuration (global)              |
-| `HealthModule` | Done    | `GET /api/v1/health` liveness endpoint; reference implementation |
-| `UsersModule`  | Planned | User profile; exports `UsersService` for `AuthModule`            |
-| `AuthModule`   | Planned | Register, login, token refresh, logout                           |
-| `NotesModule`  | Planned | Notes CRUD, scoped to the authenticated user                     |
+| Module           | Status  | Purpose                                                                     |
+| ---------------- | ------- | --------------------------------------------------------------------------- |
+| `ConfigModule`   | Done    | Validated, typed environment configuration (global)                         |
+| `DatabaseModule` | Done    | `PrismaService`: one Prisma client and connection pool per process (global) |
+| `HealthModule`   | Done    | Liveness (`/health`) and readiness with a database check (`/health/ready`)  |
+| `UsersModule`    | Planned | User profile; exports `UsersService` for `AuthModule`                       |
+| `AuthModule`     | Planned | Register, login, token refresh, logout                                      |
+| `NotesModule`    | Planned | Notes CRUD, scoped to the authenticated user                                |
 
 Rules:
 
 - Dependencies point **one way**. `AuthModule` imports `UsersModule`; `UsersModule` never imports
   `AuthModule`. Circular imports are rejected by the linter (`import/no-cycle`).
-- Only infrastructure modules (configuration, and later the database) are global. Feature modules
+- Only infrastructure modules (configuration and the database) are global. Feature modules
   must be imported explicitly, so dependencies stay visible.
 
 ## Request lifecycle
@@ -97,6 +100,11 @@ src/
 ├── app.module.ts            # Root module: config + feature modules
 ├── config/
 │   └── env.schema.ts        # Zod schema, Env type, validateEnv()
+├── database/
+│   ├── database-connection.ts  # DATABASE_URL -> driver pool settings
+│   ├── prisma.service.ts    # Prisma client: fail-fast startup, clean shutdown, health
+│   └── database.module.ts   # Global infrastructure module
+├── generated/prisma/        # Generated Prisma client (gitignored)
 └── modules/
     ├── health/              # Reference implementation of the layers
     │   ├── interfaces/
@@ -106,13 +114,17 @@ src/
     ├── auth/
     ├── users/
     └── notes/
+prisma/
+├── schema.prisma            # Data model (source of truth)
+├── migrations/              # Versioned SQL migrations
+└── seed.ts                  # Idempotent development seed
 test/                        # End-to-end tests
 docs/                        # API contract, ERD, ADRs, guides
 scripts/db/                  # Local database setup
 ```
 
-`common/` (guards, filters, interceptors, decorators) and `database/` (Prisma) are added when
-their first real code is written.
+`common/` (guards, filters, interceptors, decorators) is added when
+its first real code is written.
 
 ## Conventions
 
@@ -124,3 +136,5 @@ their first real code is written.
 - **Imports:** relative paths with explicit `.js` extensions (ES modules). No barrel `index.ts`
   files, because they hide circular dependencies.
 - **Configuration:** read through `ConfigService<Env, true>`, never `process.env` directly.
+- **Database access:** only repositories (and `PrismaService` itself) talk to Prisma. Never import the
+  generated client in controllers or services.

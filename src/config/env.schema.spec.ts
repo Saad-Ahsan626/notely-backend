@@ -19,6 +19,13 @@ describe('validateEnv', () => {
 
     expect(env.NODE_ENV).toBe('development');
     expect(env.PORT).toBe(3000);
+    expect(env.DATABASE_POOL_SIZE).toBe(10);
+  });
+
+  it('throws when DATABASE_POOL_SIZE is out of range', () => {
+    expect(() => validateEnv({ ...validEnv, DATABASE_POOL_SIZE: '0' })).toThrow(
+      /DATABASE_POOL_SIZE/,
+    );
   });
 
   it('throws when DATABASE_URL is missing', () => {
