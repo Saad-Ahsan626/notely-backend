@@ -20,12 +20,15 @@ architecture and professional engineering practices.
 - [x] MySQL schema, versioned migrations and idempotent seed data with Prisma 7
 - [x] Liveness and readiness health checks (readiness verifies the database)
 - [x] CI against a real MySQL 8.4 database, including a schema drift check
-- [ ] Global validation, consistent error responses and structured logging
+- [x] Global request validation with mass-assignment protection
+- [x] One consistent error format with request IDs; internal details never leak
+- [x] Structured JSON logging (pino) with request correlation and secret redaction
+- [x] Security headers (helmet), configurable CORS and request size limits
 - [ ] Registration and login with argon2id password hashing
 - [ ] JWT access tokens with refresh token rotation and reuse detection
 - [ ] Logout from the current device or all devices
 - [ ] Notes CRUD with pagination, search, filtering and soft delete, scoped to the owner
-- [ ] Rate limiting and security headers
+- [ ] Rate limiting
 - [ ] Interactive OpenAPI (Swagger) documentation
 - [ ] Unit and end-to-end test suites against a real database
 
@@ -40,6 +43,9 @@ architecture and professional engineering practices.
 | ORM          | Prisma 7 (MariaDB driver adapter), UUIDv7 keys    |
 | Config       | `@nestjs/config` + Zod                            |
 | Testing      | Vitest, Supertest                                 |
+| Validation   | class-validator, class-transformer                |
+| Logging      | pino (nestjs-pino)                                |
+| Security     | helmet, CORS allow-list                           |
 | Code quality | oxlint (type-aware), Prettier, Husky, lint-staged |
 | CI           | GitHub Actions                                    |
 
@@ -98,13 +104,16 @@ Full database instructions and troubleshooting: [docs/local-database-setup.md](d
 
 ## Environment variables
 
-| Variable              | Required         | Default       | Description                                               |
-| --------------------- | ---------------- | ------------- | --------------------------------------------------------- |
-| `NODE_ENV`            | No               | `development` | `development`, `test` or `production`                     |
-| `PORT`                | No               | `3000`        | HTTP port                                                 |
-| `DATABASE_URL`        | Yes              | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE`                |
-| `DATABASE_POOL_SIZE`  | No               | `10`          | Maximum open database connections (1–100)                 |
-| `SHADOW_DATABASE_URL` | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations |
+| Variable              | Required         | Default       | Description                                                    |
+| --------------------- | ---------------- | ------------- | -------------------------------------------------------------- |
+| `NODE_ENV`            | No               | `development` | `development`, `test` or `production`                          |
+| `PORT`                | No               | `3000`        | HTTP port                                                      |
+| `DATABASE_URL`        | Yes              | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE`                     |
+| `DATABASE_POOL_SIZE`  | No               | `10`          | Maximum open database connections (1–100)                      |
+| `SHADOW_DATABASE_URL` | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations      |
+| `LOG_LEVEL`           | No               | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` |
+| `CORS_ORIGINS`        | No               | none          | Comma-separated browser origins allowed by CORS                |
+| `TRUST_PROXY`         | No               | `false`       | `true` only behind a trusted reverse proxy                     |
 
 Variables are validated at startup. The app refuses to start and lists every problem if any value
 is missing or invalid.
@@ -153,8 +162,10 @@ src/
 ├── main.ts            # Bootstrap
 ├── app.setup.ts       # Shared app configuration (prefix, versioning, shutdown hooks)
 ├── app.module.ts      # Root module
+├── common/            # Validation, error filter, response envelope, request IDs
 ├── config/            # Environment schema and validation
 ├── database/          # Prisma service and database module
+├── logger/            # Structured logging configuration
 └── modules/           # Feature modules: health, auth, users, notes
 prisma/                # Schema, migrations and seed
 test/                  # End-to-end tests

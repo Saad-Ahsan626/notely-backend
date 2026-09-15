@@ -5,15 +5,17 @@
 
 ## Conventions
 
-| Topic          | Convention                                                                            |
-| -------------- | ------------------------------------------------------------------------------------- |
-| Base URL       | `/api/v1`                                                                             |
-| Format         | JSON only (`Content-Type: application/json`)                                          |
-| Field naming   | `camelCase`                                                                           |
-| IDs            | UUID strings (generated as time-ordered UUIDv7; clients must not rely on the version) |
-| Timestamps     | ISO 8601 in UTC, e.g. `2026-09-15T10:30:00.000Z`                                      |
-| Authentication | `Authorization: Bearer <accessToken>` on every endpoint not marked **Public**         |
-| Unknown fields | Rejected with `400 Bad Request`                                                       |
+| Topic          | Convention                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Base URL       | `/api/v1`                                                                                                                 |
+| Format         | JSON only (`Content-Type: application/json`)                                                                              |
+| Field naming   | `camelCase`                                                                                                               |
+| IDs            | UUID strings (generated as time-ordered UUIDv7; clients must not rely on the version)                                     |
+| Timestamps     | ISO 8601 in UTC, e.g. `2026-09-15T10:30:00.000Z`                                                                          |
+| Authentication | `Authorization: Bearer <accessToken>` on every endpoint not marked **Public**                                             |
+| Unknown fields | Rejected with `400 Bad Request`                                                                                           |
+| Request IDs    | Every response has an `X-Request-Id` header. Send your own (`[A-Za-z0-9._-]`, max 64 chars) to trace a request end to end |
+| Body size      | Request bodies are limited to 256 KB (`413 Payload Too Large`)                                                            |
 
 ## Response shapes
 
@@ -47,11 +49,25 @@ Every error, from any endpoint, uses the same shape:
     { "field": "email", "message": "email must be a valid email address" }
   ],
   "path": "/api/v1/auth/register",
-  "timestamp": "2026-09-15T10:30:00.000Z"
+  "timestamp": "2026-09-15T10:30:00.000Z",
+  "requestId": "0192a6c4-3f1e-4b7a-9c2d-5e8f1a2b3c4d"
 }
 ```
 
-`details` is present only for validation errors.
+- `details` is present only for validation errors, with one entry per failed rule. Nested fields
+  use dot paths (`tag.name`).
+- `requestId` matches the `X-Request-Id` response header. Include it when reporting a problem.
+- `path` never includes the query string.
+
+Status codes common to all endpoints:
+
+| Status | When                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| `400`  | Validation failed, unknown properties sent, or malformed JSON                                           |
+| `404`  | Route or resource not found                                                                             |
+| `409`  | Conflict with existing data (e.g. a duplicate unique value)                                             |
+| `413`  | Request body larger than 256 KB                                                                         |
+| `500`  | Unexpected server error. The message is always `Internal server error`; details are only in server logs |
 
 ---
 
@@ -71,7 +87,7 @@ Liveness: the process is running. Never touches the database.
 Readiness: the API can serve requests because the database responds.
 
 - `200 OK`: `{ "status": "ok", "database": "up" }`
-- `503 Service Unavailable`: `{ "status": "error", "database": "down" }`
+- `503 Service Unavailable`: standard error format with `"message": "Database is unavailable"`
 
 ---
 

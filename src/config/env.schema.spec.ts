@@ -41,4 +41,55 @@ describe('validateEnv', () => {
   it('throws when PORT is out of range', () => {
     expect(() => validateEnv({ ...validEnv, PORT: '70000' })).toThrow(/PORT/);
   });
+
+  describe('logging, CORS and proxy settings', () => {
+    it('defaults to info logs, no CORS origins and no trusted proxy', () => {
+      const env = validateEnv(validEnv);
+
+      expect(env.LOG_LEVEL).toBe('info');
+      expect(env.CORS_ORIGINS).toEqual([]);
+      expect(env.TRUST_PROXY).toBe(false);
+    });
+
+    it('rejects an unknown log level', () => {
+      expect(() => validateEnv({ ...validEnv, LOG_LEVEL: 'verbose' })).toThrow(
+        /LOG_LEVEL/,
+      );
+    });
+
+    it('parses a comma-separated CORS origin list, ignoring spaces and empty entries', () => {
+      const env = validateEnv({
+        ...validEnv,
+        CORS_ORIGINS: ' http://localhost:5173, https://app.notely.dev ,',
+      });
+
+      expect(env.CORS_ORIGINS).toEqual([
+        'http://localhost:5173',
+        'https://app.notely.dev',
+      ]);
+    });
+
+    it('rejects CORS origins that are not http(s) URLs', () => {
+      expect(() =>
+        validateEnv({ ...validEnv, CORS_ORIGINS: 'localhost:5173' }),
+      ).toThrow(/CORS_ORIGINS/);
+    });
+
+    it.each([
+      ['true', true],
+      ['false', false],
+      ['1', true],
+      ['0', false],
+    ])('parses TRUST_PROXY=%s as %s', (value, expected) => {
+      expect(validateEnv({ ...validEnv, TRUST_PROXY: value }).TRUST_PROXY).toBe(
+        expected,
+      );
+    });
+
+    it('rejects a TRUST_PROXY value that is not a boolean', () => {
+      expect(() => validateEnv({ ...validEnv, TRUST_PROXY: 'maybe' })).toThrow(
+        /TRUST_PROXY/,
+      );
+    });
+  });
 });

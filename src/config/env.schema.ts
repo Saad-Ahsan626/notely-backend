@@ -14,6 +14,29 @@ export const envSchema = z.object({
     error: 'DATABASE_URL must be a valid mysql:// connection URL',
   }),
   DATABASE_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+  LOG_LEVEL: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+    .default('info'),
+  /** Comma-separated browser origins allowed by CORS. Empty means no browser origins. */
+  CORS_ORIGINS: z
+    .string()
+    .default('')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    )
+    .pipe(
+      z.array(
+        z.url({
+          protocol: /^https?$/,
+          error: 'CORS_ORIGINS must be a comma-separated list of http(s) URLs',
+        }),
+      ),
+    ),
+  /** Only enable behind a trusted reverse proxy, otherwise clients can spoof their IP. */
+  TRUST_PROXY: z.stringbool().default(false),
 });
 
 export type Env = z.infer<typeof envSchema>;

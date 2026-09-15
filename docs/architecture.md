@@ -37,14 +37,16 @@ flowchart TD
     Auth -->|imports| Users
 ```
 
-| Module           | Status  | Purpose                                                                     |
-| ---------------- | ------- | --------------------------------------------------------------------------- |
-| `ConfigModule`   | Done    | Validated, typed environment configuration (global)                         |
-| `DatabaseModule` | Done    | `PrismaService`: one Prisma client and connection pool per process (global) |
-| `HealthModule`   | Done    | Liveness (`/health`) and readiness with a database check (`/health/ready`)  |
-| `UsersModule`    | Planned | User profile; exports `UsersService` for `AuthModule`                       |
-| `AuthModule`     | Planned | Register, login, token refresh, logout                                      |
-| `NotesModule`    | Planned | Notes CRUD, scoped to the authenticated user                                |
+| Module           | Status  | Purpose                                                                         |
+| ---------------- | ------- | ------------------------------------------------------------------------------- |
+| `ConfigModule`   | Done    | Validated, typed environment configuration (global)                             |
+| `DatabaseModule` | Done    | `PrismaService`: one Prisma client and connection pool per process (global)     |
+| `LoggerModule`   | Done    | pino structured logging, request IDs, redaction                                 |
+| `CommonModule`   | Done    | Global validation pipe, exception filter and response envelope (`APP_*` tokens) |
+| `HealthModule`   | Done    | Liveness (`/health`) and readiness with a database check (`/health/ready`)      |
+| `UsersModule`    | Planned | User profile; exports `UsersService` for `AuthModule`                           |
+| `AuthModule`     | Planned | Register, login, token refresh, logout                                          |
+| `NotesModule`    | Planned | Notes CRUD, scoped to the authenticated user                                    |
 
 Rules:
 
@@ -71,13 +73,13 @@ flowchart TD
     F --> Res
 ```
 
-| Stage             | Used for (in this project)                            |
-| ----------------- | ----------------------------------------------------- |
-| Middleware        | Request ID, HTTP logging                              |
-| Guards            | JWT authentication (global, opt-out with `@Public()`) |
-| Interceptors      | Wrapping responses in `{ data }`, timing              |
-| Pipes             | DTO validation and transformation, `ParseUUIDPipe`    |
-| Exception filters | One consistent error response shape                   |
+| Stage             | Used for (in this project)                                                        |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Middleware        | Request ID, HTTP logging (pino), security headers, CORS, body parsing             |
+| Guards            | JWT authentication (global, opt-out with `@Public()`)                             |
+| Interceptors      | Wrapping responses in `{ data }` / `{ data, meta }`                               |
+| Pipes             | Global DTO validation (whitelist, reject unknown fields), `ParseUUIDPipe`         |
+| Exception filters | `AllExceptionsFilter`: one error shape with `requestId`; 5xx details only in logs |
 
 Guards run **before** pipes, so an unauthenticated request is rejected before its body is even
 validated.
@@ -87,7 +89,7 @@ validated.
 All routes are served under `/api/v{version}`, e.g. `/api/v1/notes`. Versioning is URI-based with a
 default version of `1` ([ADR 0006](adr/0006-uri-api-versioning.md)).
 
-App-wide settings (prefix, versioning, shutdown hooks) live in `configureApp()` in
+App-wide HTTP settings (logger, security headers, CORS, body size limit, trusted proxy, prefix, versioning, shutdown hooks) live in `configureApp()` in
 [`src/app.setup.ts`](../src/app.setup.ts). Both `main.ts` and the e2e tests call it, so tests run
 the application exactly as production does.
 
@@ -96,8 +98,16 @@ the application exactly as production does.
 ```text
 src/
 ├── main.ts                  # Bootstrap: create app, configureApp(), listen
-├── app.setup.ts             # configureApp(): prefix, versioning, shutdown hooks
+├── app.setup.ts             # configureApp(): logger, helmet, CORS, body limit, prefix, versioning
 ├── app.module.ts            # Root module: config + feature modules
+├── common/
+│   ├── common.module.ts     # Registers pipe, filter and interceptor globally
+│   ├── decorators/          # @SkipEnvelope()
+│   ├── dto/                 # PaginatedResult
+│   ├── filters/             # AllExceptionsFilter + exception mapping
+│   ├── http/                # Request ID handling
+│   ├── interceptors/        # Response envelope
+│   └── validation/          # ValidationPipe factory + ValidationException
 ├── config/
 │   └── env.schema.ts        # Zod schema, Env type, validateEnv()
 ├── database/
@@ -105,6 +115,7 @@ src/
 │   ├── prisma.service.ts    # Prisma client: fail-fast startup, clean shutdown, health
 │   └── database.module.ts   # Global infrastructure module
 ├── generated/prisma/        # Generated Prisma client (gitignored)
+├── logger/                  # pino configuration and LoggerModule
 └── modules/
     ├── health/              # Reference implementation of the layers
     │   ├── interfaces/
@@ -118,13 +129,10 @@ prisma/
 ├── schema.prisma            # Data model (source of truth)
 ├── migrations/              # Versioned SQL migrations
 └── seed.ts                  # Idempotent development seed
-test/                        # End-to-end tests
+test/                        # End-to-end tests (+ utils/create-test-app.ts)
 docs/                        # API contract, ERD, ADRs, guides
 scripts/db/                  # Local database setup
 ```
-
-`common/` (guards, filters, interceptors, decorators) is added when
-its first real code is written.
 
 ## Conventions
 
@@ -138,3 +146,10 @@ its first real code is written.
 - **Configuration:** read through `ConfigService<Env, true>`, never `process.env` directly.
 - **Database access:** only repositories (and `PrismaService` itself) talk to Prisma. Never import the
   generated client in controllers or services.
+- **Responses:** controllers return plain values; the envelope interceptor adds `{ data }`. Lists return
+  a `PaginatedResult`. Infrastructure endpoints use `@SkipEnvelope()`.
+- **Serialization:** never return database records. Map them to response DTOs with explicit functions
+  (`toUserResponse(user)`). `@Exclude()` does not work on the plain objects Prisma returns.
+- **Errors:** services throw Nest HTTP exceptions for expected cases (`NotFoundException`,
+  `ConflictException`). Never catch-and-format errors in controllers; the global filter does it.
+- **Logging:** use Nest's `Logger`, never `console.log`. Don't log secrets or whole request bodies.
