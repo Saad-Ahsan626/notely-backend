@@ -1,0 +1,13 @@
+# Architecture Decision Records
+
+An ADR captures one significant decision: the context, what was decided, and the consequences.
+Records are immutable once accepted. A changed decision gets a **new** ADR that supersedes the old one.
+
+| #                                             | Decision                                      | Status   |
+| --------------------------------------------- | --------------------------------------------- | -------- |
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions                 | Accepted |
+| [0002](0002-tech-stack.md)                    | Use NestJS, Prisma and MySQL                  | Accepted |
+| [0003](0003-zod-for-config-validation.md)     | Validate environment configuration with Zod   | Accepted |
+| [0004](0004-local-mysql-for-development.md)   | Use a locally installed MySQL for development | Accepted |
+| [0005](0005-repository-pattern.md)            | Wrap Prisma in concrete repository classes    | Accepted |
+| [0006](0006-uri-api-versioning.md)            | Version the API in the URI                    | Accepted |

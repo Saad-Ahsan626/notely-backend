@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the outdated run
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege for the workflow's GITHUB_TOKEN
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, type check, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # CI doesn't need git hooks
+      HUSKY: 0
+      NODE_ENV: test
+      # Satisfies config validation; no database is used yet
+      DATABASE_URL: mysql://notely:ci_password@localhost:3306/notely_test
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
