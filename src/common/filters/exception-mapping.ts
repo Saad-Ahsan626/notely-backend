@@ -1,3 +1,4 @@
+import { STATUS_CODES } from 'node:http';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { mapPrismaError } from '../../database/prisma-errors.js';
 import type { ValidationErrorDetail } from '../validation/validation.exception.js';
@@ -65,11 +66,20 @@ export function mapException(exception: unknown): MappedException {
     };
   }
 
-  if (isBodyParserError(exception) && exception.type === 'entity.too.large') {
-    return {
-      status: HttpStatus.PAYLOAD_TOO_LARGE,
-      message: 'Payload too large',
-    };
+  if (isBodyParserError(exception)) {
+    if (exception.type === 'entity.too.large') {
+      return {
+        status: HttpStatus.PAYLOAD_TOO_LARGE,
+        message: 'Payload too large',
+      };
+    }
+    // Other client-side body problems, e.g. an unsupported charset or encoding (415)
+    if (exception.status >= 400 && exception.status < 500) {
+      return {
+        status: exception.status,
+        message: STATUS_CODES[exception.status] ?? 'Bad Request',
+      };
+    }
   }
 
   const prismaError = mapPrismaError(exception);

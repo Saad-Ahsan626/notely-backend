@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
+    // Decorator metadata polyfill, normally loaded by Nest; DTO-only tests need it too
+    setupFiles: ['reflect-metadata'],
     env: {
       // Keep test output readable; failures are reported by Vitest itself
       LOG_LEVEL: 'silent',

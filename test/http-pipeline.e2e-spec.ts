@@ -258,12 +258,51 @@ describe('HTTP pipeline (e2e)', () => {
     it('rejects bodies over the size limit with 413', async () => {
       const response = await api()
         .post('/api/v1/test-harness/items')
-        .send({ title: 'x', padding: 'a'.repeat(300 * 1024) })
+        .send({ title: 'x', padding: 'a'.repeat(600 * 1024) })
         .expect(413);
 
       expect(response.body).toMatchObject({
         statusCode: 413,
         message: 'Payload too large',
+      });
+    });
+  });
+
+  describe('content types', () => {
+    it('accepts JSON with an explicit UTF-8 charset', async () => {
+      await api()
+        .post('/api/v1/test-harness/items')
+        .set('Content-Type', 'application/json; charset=utf-8')
+        .send(JSON.stringify({ title: 'Charset ok' }))
+        .expect(201);
+    });
+
+    it.each([
+      ['form data', 'application/x-www-form-urlencoded', 'title=Form'],
+      ['plain text', 'text/plain', 'title'],
+    ])('rejects %s with 415', async (_case, contentType, body) => {
+      const response = await api()
+        .post('/api/v1/test-harness/items')
+        .set('Content-Type', contentType)
+        .send(body)
+        .expect(415);
+
+      expect(response.body).toMatchObject({
+        statusCode: 415,
+        message: 'Content-Type must be application/json',
+      });
+    });
+
+    it('rejects an unsupported charset with 415 instead of 500', async () => {
+      const response = await api()
+        .post('/api/v1/test-harness/items')
+        .set('Content-Type', 'application/json; charset=latin1')
+        .send(JSON.stringify({ title: 'Latin' }))
+        .expect(415);
+
+      expect(response.body).toMatchObject({
+        statusCode: 415,
+        message: 'Unsupported Media Type',
       });
     });
   });

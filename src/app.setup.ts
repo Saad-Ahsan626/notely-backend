@@ -4,13 +4,15 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { REQUEST_ID_HEADER } from './common/http/request-id.js';
+import { requireJsonBody } from './common/http/require-json-body.middleware.js';
 import type { Env } from './config/env.schema.js';
 
 /**
- * Largest accepted request body. A note is at most 50,000 characters, and utf8mb4 uses up to
- * 4 bytes per character (~200 KB), so 256 KB fits the API contract with some headroom.
+ * Largest accepted request body. A note is at most 50,000 characters. Clients that escape
+ * non-ASCII text in JSON (a backslash-u sequence) send 6 bytes per character, about 300 KB,
+ * so 512 KB fits the API contract with headroom.
  */
-export const BODY_SIZE_LIMIT = '256kb';
+export const BODY_SIZE_LIMIT = '512kb';
 
 /**
  * App-wide HTTP configuration shared by main.ts and the e2e tests,
@@ -36,6 +38,9 @@ export function configureApp(app: NestExpressApplication): void {
     exposedHeaders: [REQUEST_ID_HEADER],
   });
 
+  // JSON only: other formats get 415. The app is created with `bodyParser: false`, so Nest's
+  // default form (urlencoded) parser is never registered.
+  app.use(requireJsonBody);
   app.useBodyParser('json', { limit: BODY_SIZE_LIMIT });
 
   // All routes live under /api/v{version}/...

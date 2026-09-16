@@ -18,8 +18,10 @@ export async function createTestApp(
     controllers,
   }).compile();
 
+  // Same options as main.ts
   const app = moduleFixture.createNestApplication<NestExpressApplication>({
     bufferLogs: true,
+    bodyParser: false,
   });
   configureApp(app);
   await app.init();

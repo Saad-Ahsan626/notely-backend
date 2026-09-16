@@ -37,16 +37,16 @@ flowchart TD
     Auth -->|imports| Users
 ```
 
-| Module           | Status  | Purpose                                                                         |
-| ---------------- | ------- | ------------------------------------------------------------------------------- |
-| `ConfigModule`   | Done    | Validated, typed environment configuration (global)                             |
-| `DatabaseModule` | Done    | `PrismaService`: one Prisma client and connection pool per process (global)     |
-| `LoggerModule`   | Done    | pino structured logging, request IDs, redaction                                 |
-| `CommonModule`   | Done    | Global validation pipe, exception filter and response envelope (`APP_*` tokens) |
-| `HealthModule`   | Done    | Liveness (`/health`) and readiness with a database check (`/health/ready`)      |
-| `UsersModule`    | Planned | User profile; exports `UsersService` for `AuthModule`                           |
-| `AuthModule`     | Planned | Register, login, token refresh, logout                                          |
-| `NotesModule`    | Planned | Notes CRUD, scoped to the authenticated user                                    |
+| Module           | Status | Purpose                                                                         |
+| ---------------- | ------ | ------------------------------------------------------------------------------- |
+| `ConfigModule`   | Done   | Validated, typed environment configuration (global)                             |
+| `DatabaseModule` | Done   | `PrismaService`: one Prisma client and connection pool per process (global)     |
+| `LoggerModule`   | Done   | pino structured logging, request IDs, redaction                                 |
+| `CommonModule`   | Done   | Global validation pipe, exception filter and response envelope (`APP_*` tokens) |
+| `HealthModule`   | Done   | Liveness (`/health`) and readiness with a database check (`/health/ready`)      |
+| `UsersModule`    | Done   | User records and `GET /users/me`; exports `UsersService` for `AuthModule`       |
+| `AuthModule`     | Done   | Register, login, refresh rotation, logout; registers the global auth guard      |
+| `NotesModule`    | Done   | Notes CRUD with pagination, search and soft delete, scoped to the owner         |
 
 Rules:
 
@@ -75,7 +75,7 @@ flowchart TD
 
 | Stage             | Used for (in this project)                                                        |
 | ----------------- | --------------------------------------------------------------------------------- |
-| Middleware        | Request ID, HTTP logging (pino), security headers, CORS, body parsing             |
+| Middleware        | Request ID, HTTP logging (pino), security headers, CORS, JSON-only body parsing   |
 | Guards            | JWT authentication (global, opt-out with `@Public()`), auth rate limiting         |
 | Interceptors      | Wrapping responses in `{ data }` / `{ data, meta }`                               |
 | Pipes             | Global DTO validation (whitelist, reject unknown fields), `ParseUUIDPipe`         |
@@ -114,6 +114,8 @@ src/
 ├── database/
 │   ├── database-connection.ts  # DATABASE_URL -> driver pool settings
 │   ├── prisma.service.ts    # Prisma client: fail-fast startup, clean shutdown, health
+│   ├── prisma-errors.ts     # Prisma error codes -> HTTP (safety net)
+│   ├── escape-like.ts       # Literal matching for user search input
 │   └── database.module.ts   # Global infrastructure module
 ├── generated/prisma/        # Generated Prisma client (gitignored)
 ├── logger/                  # pino configuration and LoggerModule
@@ -125,7 +127,7 @@ src/
     │   └── health.module.ts
     ├── auth/                # Tokens, sessions, password hashing, global JwtAuthGuard
     ├── users/               # User records and profile endpoint
-    └── notes/
+    └── notes/               # Owner-scoped notes CRUD (see ADR 0013)
 prisma/
 ├── schema.prisma            # Data model (source of truth)
 ├── migrations/              # Versioned SQL migrations
@@ -157,3 +159,8 @@ scripts/db/                  # Local database setup
 - **Authentication:** every route requires an access token unless marked `@Public()`. Controllers get
   the caller through `@CurrentUser()` and never read the raw request. Tokens and sessions are
   described in [ADR 0011](adr/0011-jwt-access-tokens-with-rotating-opaque-refresh-tokens.md).
+- **Authorization:** repositories take the owner's ID on every method and never load user data by
+  ID alone. Another user's resource is a `404`, never a `403`
+  ([ADR 0013](adr/0013-notes-access-pagination-and-soft-delete.md)).
+- **Optional fields:** use `@IsOptionalNotNull()` rather than `@IsOptional()` for fields backed by
+  `NOT NULL` columns, so `null` is rejected with 400 instead of failing in the database.

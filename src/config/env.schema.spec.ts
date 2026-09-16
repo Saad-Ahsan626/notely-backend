@@ -105,7 +105,7 @@ describe('validateEnv', () => {
 
       expect(env.LOG_LEVEL).toBe('info');
       expect(env.CORS_ORIGINS).toEqual([]);
-      expect(env.TRUST_PROXY).toBe(false);
+      expect(env.TRUST_PROXY).toBe(0);
     });
 
     it('rejects an unknown log level', () => {
@@ -132,21 +132,42 @@ describe('validateEnv', () => {
       ).toThrow(/CORS_ORIGINS/);
     });
 
+    it('normalises CORS origins and rejects entries with a path', () => {
+      const env = validateEnv({
+        ...validEnv,
+        CORS_ORIGINS: 'http://localhost:5173/,https://App.Notely.dev',
+      });
+
+      expect(env.CORS_ORIGINS).toEqual([
+        'http://localhost:5173',
+        'https://app.notely.dev',
+      ]);
+      expect(() =>
+        validateEnv({
+          ...validEnv,
+          CORS_ORIGINS: 'https://app.notely.dev/login',
+        }),
+      ).toThrow(/origins only/);
+    });
+
     it.each([
-      ['true', true],
-      ['false', false],
-      ['1', true],
-      ['0', false],
-    ])('parses TRUST_PROXY=%s as %s', (value, expected) => {
+      ['0', 0],
+      ['1', 1],
+      ['2', 2],
+      ['false', 0],
+    ])('parses TRUST_PROXY=%s as %s trusted hops', (value, expected) => {
       expect(validateEnv({ ...validEnv, TRUST_PROXY: value }).TRUST_PROXY).toBe(
         expected,
       );
     });
 
-    it('rejects a TRUST_PROXY value that is not a boolean', () => {
-      expect(() => validateEnv({ ...validEnv, TRUST_PROXY: 'maybe' })).toThrow(
-        /TRUST_PROXY/,
-      );
-    });
+    it.each(['true', 'maybe', '-1', '1.5', '11'])(
+      'rejects TRUST_PROXY=%s (trusting every hop lets clients pick their IP)',
+      (value) => {
+        expect(() => validateEnv({ ...validEnv, TRUST_PROXY: value })).toThrow(
+          /TRUST_PROXY/,
+        );
+      },
+    );
   });
 });

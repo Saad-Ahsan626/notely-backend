@@ -8,14 +8,14 @@
 | Topic          | Convention                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Base URL       | `/api/v1`                                                                                                                 |
-| Format         | JSON only (`Content-Type: application/json`)                                                                              |
+| Format         | JSON only (`Content-Type: application/json`); other body types get `415`                                                  |
 | Field naming   | `camelCase`                                                                                                               |
 | IDs            | UUID strings (generated as time-ordered UUIDv7; clients must not rely on the version)                                     |
 | Timestamps     | ISO 8601 in UTC, e.g. `2026-09-15T10:30:00.000Z`                                                                          |
 | Authentication | `Authorization: Bearer <accessToken>` on every endpoint not marked **Public**                                             |
 | Unknown fields | Rejected with `400 Bad Request`                                                                                           |
 | Request IDs    | Every response has an `X-Request-Id` header. Send your own (`[A-Za-z0-9._-]`, max 64 chars) to trace a request end to end |
-| Body size      | Request bodies are limited to 256 KB (`413 Payload Too Large`)                                                            |
+| Body size      | Request bodies are limited to 512 KB (`413 Payload Too Large`)                                                            |
 
 ## Response shapes
 
@@ -55,7 +55,8 @@ Every error, from any endpoint, uses the same shape:
 ```
 
 - `details` is present only for validation errors, with one entry per failed rule. Nested fields
-  use dot paths (`tag.name`).
+  use dot paths (`tag.name`). When a value has the wrong type (for example a repeated query
+  parameter arriving as a list), only the type error is listed for that field.
 - `requestId` matches the `X-Request-Id` response header. Include it when reporting a problem.
 - `path` never includes the query string.
 
@@ -66,7 +67,9 @@ Status codes common to all endpoints:
 | `400`  | Validation failed, unknown properties sent, or malformed JSON                                           |
 | `404`  | Route or resource not found                                                                             |
 | `409`  | Conflict with existing data (e.g. a duplicate unique value)                                             |
-| `413`  | Request body larger than 256 KB                                                                         |
+| `413`  | Request body larger than 512 KB                                                                         |
+| `415`  | Body is not JSON, or uses an unsupported charset or encoding                                            |
+| `429`  | Too many login, registration or refresh attempts from one IP (see `Retry-After`)                        |
 | `500`  | Unexpected server error. The message is always `Internal server error`; details are only in server logs |
 
 ---
@@ -135,9 +138,11 @@ Reusing an already-rotated refresh token revokes **all** of the user's sessions.
 
 **Responses**
 
-- `200 OK`: `{ data: { tokens } }`
-- `401 Unauthorized`: invalid, expired, revoked or **reused** token. Reuse of an already-rotated
-  token revokes every session of that user, so the app must ask the user to log in again.
+- `200 OK`: `{ data: token object }` (see below)
+- `401 Unauthorized`: invalid, expired, revoked or **reused** token. Replaying the token this
+  session already rotated away from revokes every session of that user, so the app must ask
+  the user to log in again. Any other wrong token is a plain 401 and logs nobody out.
+- `429 Too Many Requests`: rate limit exceeded
 
 ### `POST /auth/logout`
 
@@ -166,8 +171,9 @@ Revokes every session of the current user (all devices).
 
 - **`accessToken`** is a JWT sent as `Authorization: Bearer …` on every protected request.
   `expiresIn` is its lifetime in seconds (15 minutes).
-- **`refreshToken`** is an opaque `sessionId.secret` string, valid for 7 days and rotated on every
-  use. It is only ever sent to `/auth/refresh`.
+- **`refreshToken`** is an opaque `sessionId.secret` string, rotated on every use. A session
+  expires after 7 days **without** a refresh; each refresh extends it by another 7 days. It is
+  only ever sent to `/auth/refresh`.
 
 ### Client guide (Flutter)
 
@@ -208,8 +214,9 @@ Revokes every session of the current user (all devices).
 
 ## Notes
 
-All note endpoints are scoped to the authenticated user. A note owned by another user is
-indistinguishable from a note that does not exist (`404`).
+All note endpoints require an access token and are scoped to the authenticated user. A note owned
+by another user is indistinguishable from a note that does not exist (`404`). Deleted notes are
+invisible to every endpoint.
 
 ### `POST /notes`
 
@@ -219,23 +226,26 @@ indistinguishable from a note that does not exist (`404`).
 | `content`  | string  | optional, max 50,000 chars, default `""` |
 | `isPinned` | boolean | optional, default `false`                |
 
-- `201 Created`: `{ data: note }`
-- `400 Bad Request`
+- `201 Created`: `{ data: note }`, with a `Location: /api/v1/notes/{id}` header
+- `400 Bad Request`: invalid input, `null` values, or unknown fields such as `userId`
+
+The title is trimmed; a title of only spaces is rejected.
 
 ### `GET /notes`
 
-| Query param  | Type    | Default     | Rules                                 |
-| ------------ | ------- | ----------- | ------------------------------------- |
-| `page`       | integer | `1`         | ≥ 1                                   |
-| `limit`      | integer | `20`        | 1–100                                 |
-| `search`     | string  | none        | matches title or content              |
-| `isPinned`   | boolean | none        | filter                                |
-| `isArchived` | boolean | `false`     | filter                                |
-| `sortBy`     | enum    | `updatedAt` | `createdAt` \| `updatedAt` \| `title` |
-| `sortOrder`  | enum    | `desc`      | `asc` \| `desc`                       |
+| Query param  | Type    | Default     | Rules                                                                          |
+| ------------ | ------- | ----------- | ------------------------------------------------------------------------------ |
+| `page`       | integer | `1`         | ≥ 1                                                                            |
+| `limit`      | integer | `20`        | 1–100                                                                          |
+| `search`     | string  | none        | title or content, case-insensitive, max 100 chars; `%` and `_` match literally |
+| `isPinned`   | boolean | none        | filter; only `true` or `false`                                                 |
+| `isArchived` | boolean | `false`     | filter; archived notes are hidden by default                                   |
+| `sortBy`     | enum    | `updatedAt` | `createdAt` \| `updatedAt` \| `title`                                          |
+| `sortOrder`  | enum    | `desc`      | `asc` \| `desc`                                                                |
 
-- `200 OK`: paginated list of notes
-- `400 Bad Request`: invalid query params
+- `200 OK`: paginated list of notes. **Pinned notes always come first**, then the chosen sort.
+  A page past the end returns an empty `data` array with the usual `meta`.
+- `400 Bad Request`: invalid query params (`page` 1-10,000)
 
 ### `GET /notes/:id`
 
@@ -245,7 +255,8 @@ indistinguishable from a note that does not exist (`404`).
 
 ### `PATCH /notes/:id`
 
-Partial update. At least one field is required.
+Partial update: fields that are not sent stay unchanged. At least one field is required, and `null`
+is not accepted for any field (send `""` to clear the content).
 
 | Field        | Type    | Rules            |
 | ------------ | ------- | ---------------- |
@@ -255,7 +266,7 @@ Partial update. At least one field is required.
 | `isArchived` | boolean |                  |
 
 - `200 OK`: `{ data: note }`
-- `400 Bad Request`
+- `400 Bad Request`: empty body, `null` values or invalid fields
 - `404 Not Found`
 
 ### `DELETE /notes/:id`
@@ -263,7 +274,7 @@ Partial update. At least one field is required.
 Soft delete: the note is hidden from every endpoint but kept in the database.
 
 - `204 No Content`
-- `404 Not Found`
+- `404 Not Found`: also returned when the note was already deleted
 
 ### Note object
 

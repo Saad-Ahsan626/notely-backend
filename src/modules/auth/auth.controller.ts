@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import {
   Body,
   Controller,
@@ -48,6 +49,8 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(RateLimitGuard)
+  @AuthRateLimit()
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokens> {
@@ -71,8 +74,11 @@ export class AuthController {
 
 /** Device details stored with the session, useful when reviewing or revoking logins. */
 function sessionContext(request: Request): SessionContext {
+  const { ip } = request;
+
   return {
     userAgent: request.headers['user-agent']?.slice(0, 512),
-    ipAddress: request.ip,
+    // Forwarded addresses are client-supplied text; store only valid IPs (max 45 chars)
+    ipAddress: ip !== undefined && isIP(ip) !== 0 ? ip : undefined,
   };
 }

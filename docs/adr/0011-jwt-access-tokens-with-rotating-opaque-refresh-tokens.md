@@ -34,8 +34,16 @@ address (a primary-key lookup), and only the 256-bit random secret authenticates
 
 Each refresh issues a new secret and invalidates the old one, using a conditional update
 (`UPDATE ... WHERE refresh_token_hash = <presented>`), so two concurrent refreshes cannot both
-succeed. Presenting an already-rotated token means two parties hold it, so **all sessions of that
-user are revoked** and the event is logged.
+succeed. The hash the session rotated away from is kept in `previous_refresh_token_hash`.
+
+- Presenting **that previous secret** again means two parties hold the token, so **all sessions
+  of the user are revoked** and the event is logged.
+- Any **other** wrong secret is only a `401`. The session ID is not secret (it is the `sid` claim
+  of every access token), so a guessed secret must never be able to log a user out everywhere.
+  An earlier version treated every mismatch as reuse, which let anyone who had seen an old access
+  token revoke all of that user's sessions.
+- Only one previous hash is kept: a token from two or more rotations ago is a plain `401`.
+- Sessions use a sliding expiry: each refresh extends `expires_at` by `REFRESH_TOKEN_TTL_DAYS`.
 
 ### Stateful access tokens
 
@@ -50,7 +58,7 @@ main benefit (many strategies) does not apply to a single JWT strategy.
 
 ### Brute-force protection
 
-Login and registration are limited per IP by a small in-process `RateLimitGuard`
+Login, registration and token refresh are limited per IP by a small in-process `RateLimitGuard`
 (`AUTH_RATE_LIMIT_PER_MINUTE`, default 5/minute), returning 429 with `Retry-After`.
 `@nestjs/throttler` was not used because its latest release (6.5.0) does not support NestJS 12.
 
@@ -63,3 +71,7 @@ Login and registration are limited per IP by a small in-process `RateLimitGuard`
 - Rate-limit counters are per process. Running multiple instances needs a shared store (Redis), as
   does an access-token denylist if the per-request session check is ever dropped for scale.
 - Sessions accumulate; expired rows should be cleaned up by a scheduled job (future phase).
+- Client IPs come from `X-Forwarded-For` only for the configured number of proxy hops
+  (`TRUST_PROXY`, default 0). Trusting every hop would let clients choose their own IP and bypass
+  the rate limit. Forwarded values that are not valid IP addresses are never stored.
+- Clients behind one shared IP (large offices, carrier NAT) share the refresh limit.

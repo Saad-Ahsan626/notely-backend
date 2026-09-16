@@ -4,6 +4,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { isUniqueConstraintError } from '../../database/prisma-errors.js';
 import type { UserModel } from '../../generated/prisma/models.js';
 import { toUserResponse } from '../users/dto/user-response.dto.js';
 import { UsersService } from '../users/users.service.js';
@@ -20,6 +21,7 @@ import { TokenService } from './token.service.js';
 
 /** The same message for every failed credential check, so accounts cannot be enumerated. */
 const INVALID_CREDENTIALS = 'Invalid credentials';
+const EMAIL_TAKEN = 'Email is already registered';
 
 @Injectable()
 export class AuthService {
@@ -36,17 +38,29 @@ export class AuthService {
     dto: RegisterDto,
     context: SessionContext,
   ): Promise<AuthResult> {
+    // Fast path: skip the expensive hash when the email is obviously taken
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new ConflictException('Email is already registered');
+      throw new ConflictException(EMAIL_TAKEN);
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);
-    const user = await this.usersService.create({
-      email: dto.email,
-      name: dto.name,
-      passwordHash,
-    });
+
+    let user: UserModel;
+    try {
+      user = await this.usersService.create({
+        email: dto.email,
+        name: dto.name,
+        passwordHash,
+      });
+    } catch (error) {
+      // Two registrations can pass the check above at the same moment; the unique index
+      // lets only one insert succeed, and the other must get the same clear message
+      if (isUniqueConstraintError(error)) {
+        throw new ConflictException(EMAIL_TAKEN, { cause: error });
+      }
+      throw error;
+    }
 
     return this.startSession(user, context);
   }
@@ -74,27 +88,42 @@ export class AuthService {
   }
 
   /**
-   * Rotates the refresh token. Presenting an already-rotated token means two parties hold
-   * it, so every session of that user is revoked (see ADR 0011).
+   * Rotates the refresh token (see ADR 0011).
+   *
+   * - The current secret gets a new pair.
+   * - The secret this session already rotated away from means the token was copied and
+   *   replayed, so every session of the user is revoked.
+   * - Anything else is simply invalid. The session ID is visible inside every access token,
+   *   so a guessed secret must never be able to log the user out everywhere.
    */
   async refresh(refreshToken: string): Promise<AuthTokens> {
     const parts = this.tokenService.parseRefreshToken(refreshToken);
     if (!parts) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw invalidRefreshToken();
     }
 
     const session = await this.sessionsRepository.findById(parts.sessionId);
     if (!session || session.revokedAt || session.expiresAt <= new Date()) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw invalidRefreshToken();
     }
 
-    if (
-      !this.tokenService.matchesStoredHash(
-        parts.secret,
-        session.refreshTokenHash,
-      )
-    ) {
-      await this.handleTokenReuse(session.userId, session.id);
+    const isCurrent = this.tokenService.matchesStoredHash(
+      parts.secret,
+      session.refreshTokenHash,
+    );
+
+    if (!isCurrent) {
+      const isPrevious =
+        session.previousRefreshTokenHash !== null &&
+        this.tokenService.matchesStoredHash(
+          parts.secret,
+          session.previousRefreshTokenHash,
+        );
+
+      if (isPrevious) {
+        return this.handleTokenReuse(session.userId, session.id);
+      }
+      throw invalidRefreshToken();
     }
 
     const next = this.tokenService.generateRefreshSecret();
@@ -105,9 +134,9 @@ export class AuthService {
       new Date(Date.now() + this.tokenService.refreshTokenTtlMs),
     );
 
-    // Another request rotated first: this token was already spent
+    // A concurrent request rotated this same secret first: it was used twice
     if (!rotated) {
-      await this.handleTokenReuse(session.userId, session.id);
+      return this.handleTokenReuse(session.userId, session.id);
     }
 
     const accessToken = await this.tokenService.signAccessToken({
@@ -138,7 +167,7 @@ export class AuthService {
     );
     await this.sessionsRepository.revokeAllForUser(userId);
 
-    throw new UnauthorizedException('Invalid refresh token');
+    throw invalidRefreshToken();
   }
 
   private async upgradePasswordHashIfNeeded(
@@ -190,4 +219,8 @@ export class AuthService {
       expiresIn: this.tokenService.accessTokenTtlSeconds,
     };
   }
+}
+
+function invalidRefreshToken(): UnauthorizedException {
+  return new UnauthorizedException('Invalid refresh token');
 }

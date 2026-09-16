@@ -29,6 +29,7 @@ interface WindowState {
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   private readonly windows = new Map<string, WindowState>();
+  private nextPruneAt = 0;
 
   constructor(
     private readonly reflector: Reflector,
@@ -50,7 +51,7 @@ export class RateLimitGuard implements CanActivate {
     const key = `${request.method}:${request.route?.path ?? request.path}:${request.ip ?? 'unknown'}`;
     const now = Date.now();
 
-    this.pruneExpired(now);
+    this.pruneExpired(now, options.windowMs);
 
     const window = this.windows.get(key);
     if (!window || window.resetAt <= now) {
@@ -71,8 +72,16 @@ export class RateLimitGuard implements CanActivate {
     return true;
   }
 
-  /** Keeps the map from growing without bound; windows are short-lived. */
-  private pruneExpired(now: number): void {
+  /**
+   * Keeps the map from growing without bound. Runs at most once per window, so the cost
+   * of scanning every key is not paid on every request.
+   */
+  private pruneExpired(now: number, windowMs: number): void {
+    if (now < this.nextPruneAt) {
+      return;
+    }
+    this.nextPruneAt = now + windowMs;
+
     for (const [key, window] of this.windows) {
       if (window.resetAt <= now) {
         this.windows.delete(key);

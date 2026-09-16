@@ -34,7 +34,7 @@ export class SessionsRepository {
   /**
    * Compare-and-swap rotation: the hash is replaced only if it still matches the token
    * that was presented. Two concurrent refreshes cannot both succeed, so a replayed
-   * token is always detected.
+   * token is always detected. The old hash is kept to recognise a later replay.
    *
    * @returns true when this request performed the rotation
    */
@@ -51,7 +51,11 @@ export class SessionsRepository {
         revokedAt: null,
         expiresAt: { gt: new Date() },
       },
-      data: { refreshTokenHash: nextHash, expiresAt },
+      data: {
+        refreshTokenHash: nextHash,
+        previousRefreshTokenHash: currentHash,
+        expiresAt,
+      },
     });
 
     return count === 1;

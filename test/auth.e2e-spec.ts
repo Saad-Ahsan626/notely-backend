@@ -181,7 +181,13 @@ describe('Authentication (e2e)', () => {
     });
 
     it('revokes every session when an old refresh token is replayed', async () => {
-      const { tokens } = await registerUser();
+      const { email, tokens } = await registerUser();
+      // A second device, so revocation of *other* sessions is proven too
+      const otherDevice = await api()
+        .post('/api/v1/auth/login')
+        .send({ email, password })
+        .expect(200);
+      const otherTokens: AuthTokens = otherDevice.body.data.tokens;
       const rotated = await api()
         .post('/api/v1/auth/refresh')
         .send({ refreshToken: tokens.refreshToken })
@@ -203,6 +209,37 @@ describe('Authentication (e2e)', () => {
         .get('/api/v1/users/me')
         .set('Authorization', `Bearer ${newTokens.accessToken}`)
         .expect(401);
+      await api()
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${otherTokens.accessToken}`)
+        .expect(401);
+    });
+
+    it('does not log anyone out when a session ID is paired with a guessed secret', async () => {
+      const { tokens } = await registerUser();
+      // The session ID is readable by anyone who has seen an access token
+      const payload: unknown = JSON.parse(
+        Buffer.from(
+          tokens.accessToken.split('.')[1] ?? '',
+          'base64url',
+        ).toString(),
+      );
+      const sessionId = (payload as { sid: string }).sid;
+
+      await api()
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: `${sessionId}.a-guessed-secret-value` })
+        .expect(401);
+
+      // The real user is still signed in and can still refresh
+      await api()
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${tokens.accessToken}`)
+        .expect(200);
+      await api()
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: tokens.refreshToken })
+        .expect(200);
     });
 
     it('rejects a refresh token for an unknown session', async () => {

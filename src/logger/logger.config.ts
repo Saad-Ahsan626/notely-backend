@@ -22,10 +22,23 @@ export const REDACTED_PATHS = [
 /** Health probes run every few seconds; logging them would drown real traffic. */
 const HEALTH_ROUTE = /^\/api\/v\d+\/health(?:[/?]|$)/;
 
-/** Express rewrites `req.url` while routing; `originalUrl` keeps the full path, including /api. */
-function fullUrl(req: IncomingMessage): string {
+/**
+ * The request path for logs. Express rewrites `req.url` while routing, so `originalUrl` is
+ * used to keep the /api prefix. The query string is dropped: it can hold search terms and
+ * other user data.
+ */
+export function requestPath(req: IncomingMessage): string {
   const originalUrl: unknown = Reflect.get(req, 'originalUrl');
-  return typeof originalUrl === 'string' ? originalUrl : (req.url ?? '');
+  const url = typeof originalUrl === 'string' ? originalUrl : (req.url ?? '');
+  return url.split('?')[0] ?? '';
+}
+
+interface SerializedRequest {
+  id: unknown;
+  method: string;
+  url: string;
+  headers: unknown;
+  remoteAddress?: string;
 }
 
 export function createLoggerParams(env: LoggerEnv): Params {
@@ -51,6 +64,14 @@ export function createLoggerParams(env: LoggerEnv): Params {
       serializers: {
         // Response headers are mostly static security headers: ~1 KB of noise per request
         res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
+        // Default fields minus the query string and the parsed query/params objects
+        req: (req: SerializedRequest) => ({
+          id: req.id,
+          method: req.method,
+          url: req.url.split('?')[0],
+          headers: req.headers,
+          remoteAddress: req.remoteAddress,
+        }),
       },
 
       genReqId: (req: IncomingMessage, res: ServerResponse) => {
@@ -68,10 +89,10 @@ export function createLoggerParams(env: LoggerEnv): Params {
       },
 
       customSuccessMessage: (req, res, responseTime) =>
-        `${req.method} ${fullUrl(req)} ${res.statusCode} ${Math.round(responseTime)}ms`,
+        `${req.method} ${requestPath(req)} ${res.statusCode} ${Math.round(responseTime)}ms`,
 
       autoLogging: {
-        ignore: (req) => HEALTH_ROUTE.test(fullUrl(req)),
+        ignore: (req) => HEALTH_ROUTE.test(requestPath(req)),
       },
 
       // Logs written during a request carry only its reqId, not the whole request object again

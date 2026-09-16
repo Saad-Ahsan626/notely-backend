@@ -21,6 +21,7 @@ erDiagram
         char id PK "UUIDv7"
         char user_id FK "on delete cascade"
         char refresh_token_hash "SHA-256 hex"
+        char previous_refresh_token_hash "nullable, for reuse detection"
         varchar user_agent "nullable"
         varchar ip_address "nullable, IPv4 or IPv6"
         datetime expires_at
@@ -58,13 +59,14 @@ erDiagram
 
 ## Column type decisions
 
-| Column               | Type                 | Reason                                                                                                                                                                                             |
-| -------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| All `id` columns     | `CHAR(36)` UUIDv7    | Non-guessable IDs prevent enumeration; time-ordered for index performance ([ADR 0008](adr/0008-uuidv7-primary-keys.md))                                                                            |
-| `password_hash`      | `VARCHAR(255)`       | argon2id hashes are around 100 chars; leaves room for algorithm changes                                                                                                                            |
-| `refresh_token_hash` | `CHAR(64)`           | A SHA-256 hex digest is always exactly 64 chars                                                                                                                                                    |
-| `ip_address`         | `VARCHAR(45)`        | Longest textual IPv6 form (IPv4-mapped) is 45 chars                                                                                                                                                |
-| `content`            | `MEDIUMTEXT`         | `TEXT` holds 65,535 **bytes**; with `utf8mb4` (up to 4 bytes per char) 50,000 chars may not fit. No DB default (MySQL 8.0 disallows literal defaults on text columns); the API defaults it to `""` |
-| Timestamps           | `DATETIME(3)` in UTC | Millisecond precision; UTC avoids timezone bugs. Clients convert to local time                                                                                                                     |
-| Table/column names   | `snake_case`         | MySQL convention; Prisma models stay `PascalCase` / `camelCase` via `@@map` / `@map`                                                                                                               |
-| Table collation      | utf8mb4_unicode_ci   | Set by Prisma. Case-insensitive, so the unique email index treats Alex@Mail.com and lex@mail.com as duplicates; full emoji support                                                                 |
+| Column                        | Type                 | Reason                                                                                                                                                                                                                                          |
+| ----------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All `id` columns              | `CHAR(36)` UUIDv7    | Non-guessable IDs prevent enumeration; time-ordered for index performance ([ADR 0008](adr/0008-uuidv7-primary-keys.md))                                                                                                                         |
+| `password_hash`               | `VARCHAR(255)`       | argon2id hashes are around 100 chars; leaves room for algorithm changes                                                                                                                                                                         |
+| `refresh_token_hash`          | `CHAR(64)`           | A SHA-256 hex digest is always exactly 64 chars                                                                                                                                                                                                 |
+| `previous_refresh_token_hash` | `CHAR(64)`, nullable | The hash rotated away from last; presenting that secret again is token reuse                                                                                                                                                                    |
+| `ip_address`                  | `VARCHAR(45)`        | Longest textual IPv6 form (IPv4-mapped) is 45 chars                                                                                                                                                                                             |
+| `content`                     | `MEDIUMTEXT`         | `TEXT` holds 65,535 **bytes**; with `utf8mb4` (up to 4 bytes per char) 50,000 chars may not fit. No DB default (MySQL 8.0 disallows literal defaults on text columns); the API defaults it to `""`                                              |
+| Timestamps                    | `DATETIME(3)` in UTC | Millisecond precision; UTC avoids timezone bugs. Clients convert to local time                                                                                                                                                                  |
+| Table/column names            | `snake_case`         | MySQL convention; Prisma models stay `PascalCase` / `camelCase` via `@@map` / `@map`                                                                                                                                                            |
+| Table collation               | `utf8mb4_unicode_ci` | Set by Prisma. Case-insensitive, so the unique email index treats `Alex@Mail.com` and `alex@mail.com` as duplicates. Stores all emoji, and `LIKE` search tells them apart (verified), but `=` treats different emoji as equal (a UCA 4.0 limit) |

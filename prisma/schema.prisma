@@ -13,7 +13,7 @@ datasource db {
 
 model User {
   id           String   @id @default(uuid(7)) @db.Char(36)
-  /// Stored lowercase; the utf8mb4_0900_ai_ci collation also makes the unique index case-insensitive
+  /// Stored lowercase; the table collation (utf8mb4_unicode_ci) also makes the unique index case-insensitive
   email        String   @unique @db.VarChar(255)
   name         String   @db.VarChar(100)
   /// argon2id hash, never the plain password
@@ -29,15 +29,17 @@ model User {
 
 /// One row per signed-in device. The refresh token hash is replaced on every rotation.
 model Session {
-  id               String    @id @default(uuid(7)) @db.Char(36)
-  userId           String    @map("user_id") @db.Char(36)
-  /// SHA-256 hex digest of the refresh token
-  refreshTokenHash String    @map("refresh_token_hash") @db.Char(64)
-  userAgent        String?   @map("user_agent") @db.VarChar(512)
-  ipAddress        String?   @map("ip_address") @db.VarChar(45)
-  expiresAt        DateTime  @map("expires_at") @db.DateTime(3)
-  revokedAt        DateTime? @map("revoked_at") @db.DateTime(3)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  id                       String    @id @default(uuid(7)) @db.Char(36)
+  userId                   String    @map("user_id") @db.Char(36)
+  /// SHA-256 hex digest of the current refresh token secret
+  refreshTokenHash         String    @map("refresh_token_hash") @db.Char(64)
+  /// Hash of the secret this session rotated away from. Presenting it again is token reuse.
+  previousRefreshTokenHash String?   @map("previous_refresh_token_hash") @db.Char(64)
+  userAgent                String?   @map("user_agent") @db.VarChar(512)
+  ipAddress                String?   @map("ip_address") @db.VarChar(45)
+  expiresAt                DateTime  @map("expires_at") @db.DateTime(3)
+  revokedAt                DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.DateTime(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

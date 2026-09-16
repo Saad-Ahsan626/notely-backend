@@ -28,10 +28,11 @@ architecture and professional engineering practices.
 - [x] JWT access tokens with rotating opaque refresh tokens and stolen-token detection
 - [x] Logout from the current device or all devices, effective immediately
 - [x] Secure by default: every route needs a token unless explicitly public
-- [x] Brute-force protection on login and registration
-- [ ] Notes CRUD with pagination, search, filtering and soft delete, scoped to the owner
+- [x] Brute-force protection on login, registration and token refresh
+- [x] Notes CRUD with pagination, search, filtering and soft delete, scoped to the owner
+- [x] Protection against broken object level authorization (OWASP API #1), proven by tests
 - [ ] Interactive OpenAPI (Swagger) documentation
-- [ ] Unit and end-to-end test suites against a real database
+- [x] Unit and end-to-end test suites, including e2e tests against a real database
 
 ## Tech stack
 
@@ -115,11 +116,11 @@ Full database instructions and troubleshooting: [docs/local-database-setup.md](d
 | `SHADOW_DATABASE_URL`        | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations          |
 | `LOG_LEVEL`                  | No               | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`     |
 | `CORS_ORIGINS`               | No               | none          | Comma-separated browser origins allowed by CORS                    |
-| `TRUST_PROXY`                | No               | `false`       | `true` only behind a trusted reverse proxy                         |
+| `TRUST_PROXY`                | No               | `0`           | Number of trusted reverse proxies in front of the app (0 = none)   |
 | `JWT_ACCESS_SECRET`          | Yes              | none          | Access token signing key, min 32 chars (`npm run secret:generate`) |
 | `ACCESS_TOKEN_TTL_MINUTES`   | No               | `15`          | Access token lifetime (1-60)                                       |
 | `REFRESH_TOKEN_TTL_DAYS`     | No               | `7`           | Refresh token lifetime (1-90)                                      |
-| `AUTH_RATE_LIMIT_PER_MINUTE` | No               | `5`           | Login/registration attempts per IP per minute                      |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | No               | `5`           | Login, registration and refresh attempts per IP per minute         |
 
 Variables are validated at startup. The app refuses to start and lists every problem if any value
 is missing or invalid.
@@ -161,7 +162,11 @@ Base URL: `http://localhost:3000/api/v1`
 | POST   | `/auth/logout`     | Revoke this session        | ✅ Live |
 | POST   | `/auth/logout-all` | Revoke every session       | ✅ Live |
 | GET    | `/users/me`        | Current user               | ✅ Live |
-| \*     | `/notes`           | Notes CRUD                 | Planned |
+| POST   | `/notes`           | Create a note              | ✅ Live |
+| GET    | `/notes`           | List, search, filter, sort | ✅ Live |
+| GET    | `/notes/:id`       | Read a note                | ✅ Live |
+| PATCH  | `/notes/:id`       | Update, pin or archive     | ✅ Live |
+| DELETE | `/notes/:id`       | Soft delete                | ✅ Live |
 
 The complete contract, including request rules, responses and error format, is in
 [docs/api-contract.md](docs/api-contract.md).

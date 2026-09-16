@@ -6,6 +6,14 @@ export interface MappedPrismaError {
   message: string;
 }
 
+/** True when an insert or update hit a unique index (Prisma code P2002). */
+export function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
+}
+
 /**
  * Safety net for database errors a service did not handle explicitly.
  * Services should still throw meaningful exceptions for expected cases

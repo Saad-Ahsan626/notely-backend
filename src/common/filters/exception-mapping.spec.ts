@@ -56,6 +56,30 @@ describe('mapException', () => {
     });
   });
 
+  it('keeps the status of other body-parser client errors', () => {
+    const error = Object.assign(new Error('unsupported charset "LATIN1"'), {
+      type: 'charset.unsupported',
+      status: 415,
+    });
+
+    expect(mapException(error)).toEqual({
+      status: 415,
+      message: 'Unsupported Media Type',
+    });
+  });
+
+  it('does not trust a body-parser-looking error with a server status', () => {
+    const error = Object.assign(new Error('stream failure'), {
+      type: 'stream.not.readable',
+      status: 500,
+    });
+
+    expect(mapException(error)).toEqual({
+      status: 500,
+      message: 'Internal server error',
+    });
+  });
+
   it.each([
     ['P2002', 409, 'Resource already exists'],
     ['P2003', 409, 'Related resource constraint failed'],

@@ -8,20 +8,23 @@ describe('flattenValidationErrors', () => {
   it('creates one entry per failed rule', () => {
     const errors: ValidationError[] = [
       {
-        property: 'title',
+        property: 'password',
         constraints: {
-          isString: 'title must be a string',
-          isLength: 'title must be shorter than or equal to 255 characters',
+          isLength: 'password must be longer than or equal to 8 characters',
+          matches: 'password must match the required pattern',
         },
         children: [],
       },
     ];
 
     expect(flattenValidationErrors(errors)).toEqual([
-      { field: 'title', message: 'title must be a string' },
       {
-        field: 'title',
-        message: 'title must be shorter than or equal to 255 characters',
+        field: 'password',
+        message: 'password must be longer than or equal to 8 characters',
+      },
+      {
+        field: 'password',
+        message: 'password must match the required pattern',
       },
     ]);
   });
@@ -47,6 +50,23 @@ describe('flattenValidationErrors', () => {
 
     expect(flattenValidationErrors(errors)).toEqual([
       { field: 'tags.0.name', message: 'name should not be empty' },
+    ]);
+  });
+
+  it('reports only the type error when a value has the wrong type', () => {
+    const errors: ValidationError[] = [
+      {
+        property: 'search',
+        constraints: {
+          maxLength: 'search must be shorter than or equal to 100 characters',
+          isString: 'search must be a string',
+        },
+        children: [],
+      },
+    ];
+
+    expect(flattenValidationErrors(errors)).toEqual([
+      { field: 'search', message: 'search must be a string' },
     ]);
   });
 

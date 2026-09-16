@@ -36,14 +36,44 @@ export const envSchema = z.object({
     )
     .pipe(
       z.array(
-        z.url({
-          protocol: /^https?$/,
-          error: 'CORS_ORIGINS must be a comma-separated list of http(s) URLs',
-        }),
+        z
+          .url({
+            protocol: /^https?$/,
+            error:
+              'CORS_ORIGINS must be a comma-separated list of http(s) URLs',
+          })
+          .refine(
+            (value) => {
+              const url = new URL(value);
+              return url.pathname === '/' && !url.search && !url.hash;
+            },
+            {
+              error:
+                'CORS_ORIGINS entries must be origins only (scheme, host and port, no path)',
+            },
+          )
+          // Browsers send the Origin header without a trailing slash
+          .transform((value) => new URL(value).origin),
       ),
     ),
-  /** Only enable behind a trusted reverse proxy, otherwise clients can spoof their IP. */
-  TRUST_PROXY: z.stringbool().default(false),
+  /**
+   * Number of reverse proxies in front of the app (0 = none). Express then reads the client IP
+   * that many hops from the right of X-Forwarded-For. `true` is refused on purpose: it trusts
+   * every hop, and clients control the left-most entries, so they could choose their own IP.
+   */
+  TRUST_PROXY: z
+    .preprocess(
+      (value) => (value === 'false' ? '0' : value),
+      z.coerce
+        .number({
+          error:
+            'TRUST_PROXY must be the number of trusted proxy hops (0 for none)',
+        })
+        .int()
+        .min(0)
+        .max(10),
+    )
+    .default(0),
   /** Signing key for access tokens. Generate with: npm run secret:generate */
   JWT_ACCESS_SECRET: z
     .string()

@@ -1,4 +1,5 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client.js';
 import type { SessionModel, UserModel } from '../../generated/prisma/models.js';
 import type { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
@@ -25,6 +26,7 @@ function buildSession(overrides: Partial<SessionModel> = {}): SessionModel {
     id: 'session-1',
     userId: 'user-1',
     refreshTokenHash: 'stored-hash',
+    previousRefreshTokenHash: 'previous-hash',
     userAgent: null,
     ipAddress: null,
     expiresAt: new Date(NOW.getTime() + 86_400_000),
@@ -125,6 +127,33 @@ describe('AuthService', () => {
       expect(result.user).not.toHaveProperty('passwordHash');
     });
 
+    it('gives the same clear 409 when a simultaneous registration wins the race', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+      passwordService.hash.mockResolvedValue('$argon2id$new-hash');
+      usersService.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '7.10.0',
+        }),
+      );
+
+      const attempt = service.register(credentials, {});
+
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toThrow('Email is already registered');
+      expect(sessionsRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('does not hide unrelated database errors during registration', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+      passwordService.hash.mockResolvedValue('$argon2id$new-hash');
+      usersService.create.mockRejectedValue(new Error('connection lost'));
+
+      await expect(service.register(credentials, {})).rejects.toThrow(
+        'connection lost',
+      );
+    });
+
     it('rejects an email that is already registered', async () => {
       usersService.findByEmail.mockResolvedValue(buildUser());
 
@@ -189,7 +218,12 @@ describe('AuthService', () => {
         secret: 'presented-secret',
       });
       sessionsRepository.findById.mockResolvedValue(buildSession());
-      tokenService.matchesStoredHash.mockReturnValue(true);
+      // Only the secret named after a hash matches that hash
+      tokenService.matchesStoredHash.mockImplementation(
+        (secret, hash) =>
+          (secret === 'presented-secret' && hash === 'stored-hash') ||
+          (secret === 'old-secret' && hash === 'previous-hash'),
+      );
     });
 
     it('rotates the token and returns a new pair', async () => {
@@ -226,8 +260,11 @@ describe('AuthService', () => {
       expect(sessionsRepository.revokeAllForUser).not.toHaveBeenCalled();
     });
 
-    it('revokes every session when an old token is replayed', async () => {
-      tokenService.matchesStoredHash.mockReturnValue(false);
+    it('revokes every session when the previous (already rotated) secret is replayed', async () => {
+      tokenService.parseRefreshToken.mockReturnValue({
+        sessionId: 'session-1',
+        secret: 'old-secret',
+      });
 
       await expect(service.refresh('session-1.old-secret')).rejects.toThrow(
         'Invalid refresh token',
@@ -236,6 +273,34 @@ describe('AuthService', () => {
         'user-1',
       );
       expect(sessionsRepository.rotate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a guessed secret WITHOUT logging the user out (session IDs are public)', async () => {
+      tokenService.parseRefreshToken.mockReturnValue({
+        sessionId: 'session-1',
+        secret: 'made-up-secret',
+      });
+
+      await expect(service.refresh('session-1.made-up-secret')).rejects.toThrow(
+        'Invalid refresh token',
+      );
+      expect(sessionsRepository.revokeAllForUser).not.toHaveBeenCalled();
+      expect(sessionsRepository.rotate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a wrong secret on a session that has never rotated', async () => {
+      sessionsRepository.findById.mockResolvedValue(
+        buildSession({ previousRefreshTokenHash: null }),
+      );
+      tokenService.parseRefreshToken.mockReturnValue({
+        sessionId: 'session-1',
+        secret: 'old-secret',
+      });
+
+      await expect(service.refresh('session-1.old-secret')).rejects.toThrow(
+        'Invalid refresh token',
+      );
+      expect(sessionsRepository.revokeAllForUser).not.toHaveBeenCalled();
     });
 
     it('revokes every session when another request rotated first (race)', async () => {

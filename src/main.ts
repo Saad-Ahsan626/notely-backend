@@ -10,6 +10,8 @@ async function bootstrap() {
   // Hold startup logs until the pino logger is attached, so none are printed unformatted
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    // Only the JSON parser registered in configureApp(); no form-data parsing
+    bodyParser: false,
   });
   configureApp(app);
 

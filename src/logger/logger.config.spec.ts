@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Options } from 'pino-http';
-import { createLoggerParams, REDACTED_PATHS } from './logger.config.js';
+import {
+  createLoggerParams,
+  REDACTED_PATHS,
+  requestPath,
+} from './logger.config.js';
 
 function pinoHttpOptions(
   env: Parameters<typeof createLoggerParams>[0],
@@ -92,6 +96,33 @@ describe('createLoggerParams', () => {
       expect(
         options.customSuccessMessage?.(routedRequest, res(200), 12.4),
       ).toBe('GET /api/v1/notes 200 12ms');
+    });
+
+    it('never logs the query string', () => {
+      const searchRequest = {
+        url: '/v1/notes?search=secret',
+        originalUrl: '/api/v1/notes?search=secret',
+      } as unknown as IncomingMessage;
+      const serializeRequest = options.serializers?.['req'];
+
+      expect(requestPath(searchRequest)).toBe('/api/v1/notes');
+      expect(
+        serializeRequest?.({
+          id: 'r1',
+          method: 'GET',
+          url: '/api/v1/notes?search=secret',
+          query: { search: 'secret' },
+          params: {},
+          headers: {},
+          remoteAddress: '127.0.0.1',
+        }),
+      ).toEqual({
+        id: 'r1',
+        method: 'GET',
+        url: '/api/v1/notes',
+        headers: {},
+        remoteAddress: '127.0.0.1',
+      });
     });
 
     it('logs only the status code of responses, not every header', () => {
