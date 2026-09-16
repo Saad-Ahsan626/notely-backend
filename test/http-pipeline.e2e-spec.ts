@@ -20,6 +20,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import request from 'supertest';
+import { Public } from '../src/common/decorators/public.decorator.js';
 import { PaginatedResult } from '../src/common/dto/paginated-result.js';
 import { Prisma } from '../src/generated/prisma/client.js';
 import { createTestApp } from './utils/create-test-app.js';
@@ -50,6 +51,8 @@ class ListItemsQueryDto {
   page: number = 1;
 }
 
+// Authentication is global, so this pipeline-only controller opts out
+@Public()
 @Controller('test-harness')
 class HarnessController {
   @Post('items')

@@ -108,7 +108,8 @@ Creates an account and signs the user in.
 - `201 Created`: `{ data: { user, tokens } }`
 - `400 Bad Request`: validation failed
 - `409 Conflict`: email already registered
-- `429 Too Many Requests`: rate limit exceeded
+- `429 Too Many Requests`: more than `AUTH_RATE_LIMIT_PER_MINUTE` attempts (default 5) from one IP
+  per minute; a `Retry-After` header says when to try again
 
 ### `POST /auth/login` (Public)
 
@@ -135,11 +136,12 @@ Reusing an already-rotated refresh token revokes **all** of the user's sessions.
 **Responses**
 
 - `200 OK`: `{ data: { tokens } }`
-- `401 Unauthorized`: invalid, expired, revoked or reused token
+- `401 Unauthorized`: invalid, expired, revoked or **reused** token. Reuse of an already-rotated
+  token revokes every session of that user, so the app must ask the user to log in again.
 
 ### `POST /auth/logout`
 
-Revokes the current session.
+Revokes the current session. The access token stops working immediately.
 
 - `204 No Content`
 - `401 Unauthorized`
@@ -155,14 +157,29 @@ Revokes every session of the current user (all devices).
 
 ```json
 {
-  "accessToken": "eyJ…",
-  "refreshToken": "eyJ…",
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9.…",
+  "refreshToken": "01a0a4eb-be81-7015-b47f-565f552f45b4.k7Pq9ZxR…",
   "tokenType": "Bearer",
   "expiresIn": 900
 }
 ```
 
-`expiresIn` is the access token lifetime in seconds.
+- **`accessToken`** is a JWT sent as `Authorization: Bearer …` on every protected request.
+  `expiresIn` is its lifetime in seconds (15 minutes).
+- **`refreshToken`** is an opaque `sessionId.secret` string, valid for 7 days and rotated on every
+  use. It is only ever sent to `/auth/refresh`.
+
+### Client guide (Flutter)
+
+1. **Store both tokens in secure storage** (`flutter_secure_storage`: Keychain / Keystore), never in
+   plain preferences.
+2. **On `401`,** call `/auth/refresh` once, then retry the failed request.
+3. **Refresh one request at a time.** If several requests fail together, run a single refresh and
+   let the others wait for it. Parallel refreshes look like a stolen token and log the user out
+   everywhere.
+4. **Replace both tokens** with every refresh response; the old refresh token is dead immediately.
+5. **If refresh returns `401`,** clear the stored tokens and show the login screen.
+6. Optionally send an `X-Request-Id` header to trace a request through the API logs.
 
 ---
 

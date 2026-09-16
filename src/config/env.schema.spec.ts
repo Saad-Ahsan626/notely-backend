@@ -1,10 +1,11 @@
-import { validateEnv } from './env.schema.js';
+import { EXAMPLE_JWT_SECRET, validateEnv } from './env.schema.js';
 
 describe('validateEnv', () => {
   const validEnv = {
     NODE_ENV: 'development',
     PORT: '3000',
     DATABASE_URL: 'mysql://notely:secret@localhost:3306/notely_dev',
+    JWT_ACCESS_SECRET: 'a-test-secret-that-is-long-enough-32',
   };
 
   it('returns typed values for a valid environment', () => {
@@ -15,7 +16,10 @@ describe('validateEnv', () => {
   });
 
   it('applies defaults for optional variables', () => {
-    const env = validateEnv({ DATABASE_URL: validEnv.DATABASE_URL });
+    const env = validateEnv({
+      DATABASE_URL: validEnv.DATABASE_URL,
+      JWT_ACCESS_SECRET: validEnv.JWT_ACCESS_SECRET,
+    });
 
     expect(env.NODE_ENV).toBe('development');
     expect(env.PORT).toBe(3000);
@@ -29,7 +33,12 @@ describe('validateEnv', () => {
   });
 
   it('throws when DATABASE_URL is missing', () => {
-    expect(() => validateEnv({ PORT: '3000' })).toThrow(/DATABASE_URL/);
+    expect(() =>
+      validateEnv({
+        PORT: '3000',
+        JWT_ACCESS_SECRET: validEnv.JWT_ACCESS_SECRET,
+      }),
+    ).toThrow(/DATABASE_URL/);
   });
 
   it('throws when DATABASE_URL is not a mysql URL', () => {
@@ -40,6 +49,54 @@ describe('validateEnv', () => {
 
   it('throws when PORT is out of range', () => {
     expect(() => validateEnv({ ...validEnv, PORT: '70000' })).toThrow(/PORT/);
+  });
+
+  describe('authentication settings', () => {
+    it('applies token and rate-limit defaults', () => {
+      const env = validateEnv(validEnv);
+
+      expect(env.ACCESS_TOKEN_TTL_MINUTES).toBe(15);
+      expect(env.REFRESH_TOKEN_TTL_DAYS).toBe(7);
+      expect(env.AUTH_RATE_LIMIT_PER_MINUTE).toBe(5);
+    });
+
+    it('requires a JWT secret', () => {
+      const { JWT_ACCESS_SECRET: _omitted, ...withoutSecret } = validEnv;
+
+      expect(() => validateEnv(withoutSecret)).toThrow(/JWT_ACCESS_SECRET/);
+    });
+
+    it('rejects a JWT secret shorter than 32 characters', () => {
+      expect(() =>
+        validateEnv({ ...validEnv, JWT_ACCESS_SECRET: 'too-short' }),
+      ).toThrow(/at least 32 characters/);
+    });
+
+    it('accepts the example secret outside production', () => {
+      expect(
+        validateEnv({ ...validEnv, JWT_ACCESS_SECRET: EXAMPLE_JWT_SECRET })
+          .JWT_ACCESS_SECRET,
+      ).toBe(EXAMPLE_JWT_SECRET);
+    });
+
+    it('rejects the example secret in production', () => {
+      expect(() =>
+        validateEnv({
+          ...validEnv,
+          NODE_ENV: 'production',
+          JWT_ACCESS_SECRET: EXAMPLE_JWT_SECRET,
+        }),
+      ).toThrow(/placeholder/);
+    });
+
+    it('rejects token lifetimes outside the allowed range', () => {
+      expect(() =>
+        validateEnv({ ...validEnv, ACCESS_TOKEN_TTL_MINUTES: '120' }),
+      ).toThrow(/ACCESS_TOKEN_TTL_MINUTES/);
+      expect(() =>
+        validateEnv({ ...validEnv, REFRESH_TOKEN_TTL_DAYS: '0' }),
+      ).toThrow(/REFRESH_TOKEN_TTL_DAYS/);
+    });
   });
 
   describe('logging, CORS and proxy settings', () => {

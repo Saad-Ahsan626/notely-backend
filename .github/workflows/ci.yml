@@ -44,6 +44,7 @@ jobs:
       NODE_ENV: test
       # 127.0.0.1 instead of localhost: the container port is published on IPv4
       DATABASE_URL: mysql://notely:ci_password@127.0.0.1:3306/notely_test
+      JWT_ACCESS_SECRET: ci-only-access-token-secret-at-least-32-chars
 
     steps:
       - name: Check out code

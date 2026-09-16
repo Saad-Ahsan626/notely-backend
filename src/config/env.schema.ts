@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 /**
+ * The placeholder in .env.example. Accepted in development and tests so a fresh clone runs,
+ * but rejected in production so a copied placeholder can never secure real tokens.
+ */
+export const EXAMPLE_JWT_SECRET =
+  'dev-only-example-secret-change-me-before-deploying';
+
+/**
  * Single source of truth for environment variables.
  * The TypeScript type is inferred from the schema, so validation and types can never drift apart.
  */
@@ -37,7 +44,32 @@ export const envSchema = z.object({
     ),
   /** Only enable behind a trusted reverse proxy, otherwise clients can spoof their IP. */
   TRUST_PROXY: z.stringbool().default(false),
+  /** Signing key for access tokens. Generate with: npm run secret:generate */
+  JWT_ACCESS_SECRET: z
+    .string()
+    .min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
+  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  /** Login and registration attempts allowed per IP address per minute */
+  AUTH_RATE_LIMIT_PER_MINUTE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(5),
 });
+
+/** Cross-field rules that need the whole environment. */
+export const validatedEnvSchema = envSchema.refine(
+  (env) =>
+    env.NODE_ENV !== 'production' ||
+    env.JWT_ACCESS_SECRET !== EXAMPLE_JWT_SECRET,
+  {
+    path: ['JWT_ACCESS_SECRET'],
+    error:
+      'JWT_ACCESS_SECRET is still the .env.example placeholder; generate a real secret before deploying',
+  },
+);
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -46,7 +78,7 @@ export type Env = z.infer<typeof envSchema>;
  * so the app refuses to boot with invalid configuration (fail fast).
  */
 export function validateEnv(config: Record<string, unknown>): Env {
-  const result = envSchema.safeParse(config);
+  const result = validatedEnvSchema.safeParse(config);
 
   if (!result.success) {
     throw new Error(

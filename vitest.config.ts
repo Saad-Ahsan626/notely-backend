@@ -6,6 +6,9 @@ export default defineConfig({
     env: {
       // Keep test output readable; failures are reported by Vitest itself
       LOG_LEVEL: 'silent',
+      JWT_ACCESS_SECRET: 'test-only-access-token-secret-at-least-32-chars',
+      // High enough that ordinary tests never hit it; the rate-limit test lowers it itself
+      AUTH_RATE_LIMIT_PER_MINUTE: '500',
     },
     projects: [
       {

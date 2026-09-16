@@ -76,7 +76,7 @@ flowchart TD
 | Stage             | Used for (in this project)                                                        |
 | ----------------- | --------------------------------------------------------------------------------- |
 | Middleware        | Request ID, HTTP logging (pino), security headers, CORS, body parsing             |
-| Guards            | JWT authentication (global, opt-out with `@Public()`)                             |
+| Guards            | JWT authentication (global, opt-out with `@Public()`), auth rate limiting         |
 | Interceptors      | Wrapping responses in `{ data }` / `{ data, meta }`                               |
 | Pipes             | Global DTO validation (whitelist, reject unknown fields), `ParseUUIDPipe`         |
 | Exception filters | `AllExceptionsFilter`: one error shape with `requestId`; 5xx details only in logs |
@@ -102,7 +102,8 @@ src/
 ├── app.module.ts            # Root module: config + feature modules
 ├── common/
 │   ├── common.module.ts     # Registers pipe, filter and interceptor globally
-│   ├── decorators/          # @SkipEnvelope()
+│   ├── decorators/          # @SkipEnvelope(), @Public()
+│   ├── guards/              # RateLimitGuard for credential endpoints
 │   ├── dto/                 # PaginatedResult
 │   ├── filters/             # AllExceptionsFilter + exception mapping
 │   ├── http/                # Request ID handling
@@ -122,8 +123,8 @@ src/
     │   ├── health.controller.ts
     │   ├── health.service.ts
     │   └── health.module.ts
-    ├── auth/
-    ├── users/
+    ├── auth/                # Tokens, sessions, password hashing, global JwtAuthGuard
+    ├── users/               # User records and profile endpoint
     └── notes/
 prisma/
 ├── schema.prisma            # Data model (source of truth)
@@ -153,3 +154,6 @@ scripts/db/                  # Local database setup
 - **Errors:** services throw Nest HTTP exceptions for expected cases (`NotFoundException`,
   `ConflictException`). Never catch-and-format errors in controllers; the global filter does it.
 - **Logging:** use Nest's `Logger`, never `console.log`. Don't log secrets or whole request bodies.
+- **Authentication:** every route requires an access token unless marked `@Public()`. Controllers get
+  the caller through `@CurrentUser()` and never read the raw request. Tokens and sessions are
+  described in [ADR 0011](adr/0011-jwt-access-tokens-with-rotating-opaque-refresh-tokens.md).

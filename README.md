@@ -24,30 +24,32 @@ architecture and professional engineering practices.
 - [x] One consistent error format with request IDs; internal details never leak
 - [x] Structured JSON logging (pino) with request correlation and secret redaction
 - [x] Security headers (helmet), configurable CORS and request size limits
-- [ ] Registration and login with argon2id password hashing
-- [ ] JWT access tokens with refresh token rotation and reuse detection
-- [ ] Logout from the current device or all devices
+- [x] Registration and login with argon2id password hashing and automatic re-hashing
+- [x] JWT access tokens with rotating opaque refresh tokens and stolen-token detection
+- [x] Logout from the current device or all devices, effective immediately
+- [x] Secure by default: every route needs a token unless explicitly public
+- [x] Brute-force protection on login and registration
 - [ ] Notes CRUD with pagination, search, filtering and soft delete, scoped to the owner
-- [ ] Rate limiting
 - [ ] Interactive OpenAPI (Swagger) documentation
 - [ ] Unit and end-to-end test suites against a real database
 
 ## Tech stack
 
-| Area         | Choice                                            |
-| ------------ | ------------------------------------------------- |
-| Runtime      | Node.js 24 LTS, ES modules                        |
-| Framework    | NestJS 12 (Express)                               |
-| Language     | TypeScript (strict)                               |
-| Database     | MySQL 8                                           |
-| ORM          | Prisma 7 (MariaDB driver adapter), UUIDv7 keys    |
-| Config       | `@nestjs/config` + Zod                            |
-| Testing      | Vitest, Supertest                                 |
-| Validation   | class-validator, class-transformer                |
-| Logging      | pino (nestjs-pino)                                |
-| Security     | helmet, CORS allow-list                           |
-| Code quality | oxlint (type-aware), Prettier, Husky, lint-staged |
-| CI           | GitHub Actions                                    |
+| Area         | Choice                                                 |
+| ------------ | ------------------------------------------------------ |
+| Runtime      | Node.js 24 LTS, ES modules                             |
+| Framework    | NestJS 12 (Express)                                    |
+| Language     | TypeScript (strict)                                    |
+| Database     | MySQL 8                                                |
+| ORM          | Prisma 7 (MariaDB driver adapter), UUIDv7 keys         |
+| Config       | `@nestjs/config` + Zod                                 |
+| Testing      | Vitest, Supertest                                      |
+| Validation   | class-validator, class-transformer                     |
+| Logging      | pino (nestjs-pino)                                     |
+| Auth         | JWT (`@nestjs/jwt`), argon2id, rotating refresh tokens |
+| Security     | helmet, CORS allow-list, per-IP rate limiting          |
+| Code quality | oxlint (type-aware), Prettier, Husky, lint-staged      |
+| CI           | GitHub Actions                                         |
 
 ## Getting started
 
@@ -104,53 +106,62 @@ Full database instructions and troubleshooting: [docs/local-database-setup.md](d
 
 ## Environment variables
 
-| Variable              | Required         | Default       | Description                                                    |
-| --------------------- | ---------------- | ------------- | -------------------------------------------------------------- |
-| `NODE_ENV`            | No               | `development` | `development`, `test` or `production`                          |
-| `PORT`                | No               | `3000`        | HTTP port                                                      |
-| `DATABASE_URL`        | Yes              | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE`                     |
-| `DATABASE_POOL_SIZE`  | No               | `10`          | Maximum open database connections (1–100)                      |
-| `SHADOW_DATABASE_URL` | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations      |
-| `LOG_LEVEL`           | No               | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` |
-| `CORS_ORIGINS`        | No               | none          | Comma-separated browser origins allowed by CORS                |
-| `TRUST_PROXY`         | No               | `false`       | `true` only behind a trusted reverse proxy                     |
+| Variable                     | Required         | Default       | Description                                                        |
+| ---------------------------- | ---------------- | ------------- | ------------------------------------------------------------------ |
+| `NODE_ENV`                   | No               | `development` | `development`, `test` or `production`                              |
+| `PORT`                       | No               | `3000`        | HTTP port                                                          |
+| `DATABASE_URL`               | Yes              | none          | `mysql://USER:PASSWORD@HOST:PORT/DATABASE`                         |
+| `DATABASE_POOL_SIZE`         | No               | `10`          | Maximum open database connections (1–100)                          |
+| `SHADOW_DATABASE_URL`        | For `db:migrate` | none          | Prisma CLI only: scratch database for creating migrations          |
+| `LOG_LEVEL`                  | No               | `info`        | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`     |
+| `CORS_ORIGINS`               | No               | none          | Comma-separated browser origins allowed by CORS                    |
+| `TRUST_PROXY`                | No               | `false`       | `true` only behind a trusted reverse proxy                         |
+| `JWT_ACCESS_SECRET`          | Yes              | none          | Access token signing key, min 32 chars (`npm run secret:generate`) |
+| `ACCESS_TOKEN_TTL_MINUTES`   | No               | `15`          | Access token lifetime (1-60)                                       |
+| `REFRESH_TOKEN_TTL_DAYS`     | No               | `7`           | Refresh token lifetime (1-90)                                      |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | No               | `5`           | Login/registration attempts per IP per minute                      |
 
 Variables are validated at startup. The app refuses to start and lists every problem if any value
 is missing or invalid.
 
 ## Scripts
 
-| Script               | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `npm run start:dev`  | Start in watch mode                                |
-| `npm run build`      | Compile to `dist/`                                 |
-| `npm run start:prod` | Run the compiled app                               |
-| `npm run check`      | Format check, lint, type check and unit tests      |
-| `npm run lint`       | Type-aware lint (warnings fail)                    |
-| `npm run typecheck`  | Type check `src` and `test` without emitting       |
-| `npm run format`     | Format all files with Prettier                     |
-| `npm test`           | Unit tests                                         |
-| `npm run test:e2e`   | End-to-end tests                                   |
-| `npm run test:cov`   | Unit tests with coverage                           |
-| `npm run db:init`    | Create local databases and the application user    |
-| `npm run db:migrate` | Create and apply a migration after a schema change |
-| `npm run db:deploy`  | Apply existing migrations                          |
-| `npm run db:status`  | Show applied and pending migrations                |
-| `npm run db:seed`    | Load demo data (refuses to run in production)      |
-| `npm run db:studio`  | Browse data in Prisma Studio                       |
-| `npm run db:reset`   | ⚠️ Drop local data and re-run all migrations       |
+| Script                    | Description                                         |
+| ------------------------- | --------------------------------------------------- |
+| `npm run start:dev`       | Start in watch mode                                 |
+| `npm run build`           | Compile to `dist/`                                  |
+| `npm run start:prod`      | Run the compiled app                                |
+| `npm run check`           | Format check, lint, type check and unit tests       |
+| `npm run lint`            | Type-aware lint (warnings fail)                     |
+| `npm run typecheck`       | Type check `src` and `test` without emitting        |
+| `npm run format`          | Format all files with Prettier                      |
+| `npm test`                | Unit tests                                          |
+| `npm run test:e2e`        | End-to-end tests                                    |
+| `npm run test:cov`        | Unit tests with coverage                            |
+| `npm run secret:generate` | Print a strong random value for `JWT_ACCESS_SECRET` |
+| `npm run db:init`         | Create local databases and the application user     |
+| `npm run db:migrate`      | Create and apply a migration after a schema change  |
+| `npm run db:deploy`       | Apply existing migrations                           |
+| `npm run db:status`       | Show applied and pending migrations                 |
+| `npm run db:seed`         | Load demo data (refuses to run in production)       |
+| `npm run db:studio`       | Browse data in Prisma Studio                        |
+| `npm run db:reset`        | ⚠️ Drop local data and re-run all migrations        |
 
 ## API
 
 Base URL: `http://localhost:3000/api/v1`
 
-| Method | Endpoint        | Description                | Status  |
-| ------ | --------------- | -------------------------- | ------- |
-| GET    | `/health`       | Liveness check             | ✅ Live |
-| GET    | `/health/ready` | Readiness check (database) | ✅ Live |
-| POST   | `/auth/*`       | Authentication             | Planned |
-| GET    | `/users/me`     | Current user               | Planned |
-| \*     | `/notes`        | Notes CRUD                 | Planned |
+| Method | Endpoint           | Description                | Status  |
+| ------ | ------------------ | -------------------------- | ------- |
+| GET    | `/health`          | Liveness check             | ✅ Live |
+| GET    | `/health/ready`    | Readiness check (database) | ✅ Live |
+| POST   | `/auth/register`   | Create an account          | ✅ Live |
+| POST   | `/auth/login`      | Sign in                    | ✅ Live |
+| POST   | `/auth/refresh`    | Rotate tokens              | ✅ Live |
+| POST   | `/auth/logout`     | Revoke this session        | ✅ Live |
+| POST   | `/auth/logout-all` | Revoke every session       | ✅ Live |
+| GET    | `/users/me`        | Current user               | ✅ Live |
+| \*     | `/notes`           | Notes CRUD                 | Planned |
 
 The complete contract, including request rules, responses and error format, is in
 [docs/api-contract.md](docs/api-contract.md).

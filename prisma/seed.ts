@@ -9,6 +9,7 @@
 import { existsSync } from 'node:fs';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { hash } from 'argon2';
+import { ARGON2_OPTIONS } from '../src/modules/auth/password.service.js';
 import { validateEnv } from '../src/config/env.schema.js';
 import { createPoolConfig } from '../src/database/database-connection.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
@@ -58,8 +59,8 @@ const prisma = new PrismaClient({
 });
 
 async function seed(): Promise<void> {
-  // argon2id is the argon2 package's default algorithm
-  const passwordHash = await hash(DEMO_USER.password);
+  // Same settings the API uses, so the demo user is not re-hashed on first login
+  const passwordHash = await hash(DEMO_USER.password, ARGON2_OPTIONS);
 
   const user = await prisma.$transaction(async (tx) => {
     const demoUser = await tx.user.upsert({
